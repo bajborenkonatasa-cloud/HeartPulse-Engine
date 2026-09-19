@@ -1,38 +1,19 @@
-# HeartPulse Engine ❤️‍🔥✨
+# HeartPulse Engine v0.4.0
 
-Experimental SillyTavern extension that combines relationship dynamics, intimacy/kink guidance, persistent intentions, NPC state and a transparent “what the model sees” panel in one place.
+Clean UI rebuild for SillyTavern. The opening mechanism now follows the same direct module-import and DOM show/hide pattern used by working SillyTavern extensions.
 
-## Design goals
+Open from:
+- floating ❤️‍🔥 button;
+- Extensions drawer → HeartPulse Engine;
+- 🪄 extensions menu → HeartPulse Engine.
 
-- One extension instead of several overlapping roleplay helpers.
-- No separate model/API request in the base mode.
-- Per-chat state stored in SillyTavern `chatMetadata`.
-- Prompt injection through SillyTavern's extension prompt mechanism.
-- Manual control remains available at all times.
-- Optional automatic state updates piggyback on the normal assistant reply using a compact hidden HTML-comment packet.
-- The model sees only the generated context block, not the extension UI or all locally stored data.
+Data remains local/per chat; prompt injection does not require a separate API request.
 
-## Main tabs
+# HeartPulse Engine v0.3.0
 
-- **💗 Пульс** — relationship/emotion scales.
-- **❤️‍🔥 Искра** — kink/fetish tags, intensity, spontaneity and character-card keyword scan.
-- **🎯 Намерения** — persistent unfinished goals so the character can carry plans across later turns.
-- **👥 NPC** — compact NPC state returned by the normal model response.
-- **📜 Журнал** — local history of emotional shifts and completed intentions.
-- **👁 Модель** — exact prompt text currently injected into the next generation.
+Mobile-safe opener rebuild. Panel can be opened from:
+- floating ❤️‍🔥 button
+- Extensions settings block
+- SillyTavern wand/extensions menu
 
-## Important: model visibility
-
-The UI, sliders, journal and local metadata are **not automatically visible to the language model**. Only the text shown in **“👁 Модель”** is injected into generation. This is intentional: it keeps token usage predictable and gives the user a transparent control surface.
-
-When automatic tracking is enabled, the prompt asks the model to append one compact `HEARTPULSE_STATE` HTML comment to its ordinary response. The extension parses that packet locally, updates the UI, removes the packet from the stored chat message, and does not make a second API call.
-
-## Installation
-
-1. Put this repository into your SillyTavern user extension directory, or install it from a Git repository URL after publishing it.
-2. Reload SillyTavern.
-3. Tap the floating **❤️‍🔥✨** button.
-
-## Current version
-
-`0.1.0` — architecture/base build. Before publishing broadly, test on the exact SillyTavern build you use, especially automatic packet parsing and message persistence.
+This build intentionally disables dragging of the floating button to eliminate Android tap/drag conflicts.

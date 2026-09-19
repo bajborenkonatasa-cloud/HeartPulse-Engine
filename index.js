@@ -1,3 +1,6 @@
+import { setExtensionPrompt, extension_prompt_types, eventSource, event_types } from '../../../../script.js';
+import { getContext } from '../../../extensions.js';
+
 const MODULE = 'heartpulse_engine';
 const PROMPT_ID = 'heartpulse_engine_context';
 const META_KEY = 'heartpulse_engine_state_v2';
@@ -86,7 +89,7 @@ const defaults = () => ({
   updatedAt: Date.now()
 });
 
-function ctx(){ return window.SillyTavern?.getContext?.(); }
+function ctx(){ try { return getContext?.() || globalThis.SillyTavern?.getContext?.() || {}; } catch(e){ console.warn('[HeartPulse] getContext failed', e); return {}; } }
 function esc(s=''){ return String(s).replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function clamp(n,min=-100,max=100){ n=Number(n)||0; return Math.max(min,Math.min(max,n)); }
 function now(){ return Date.now(); }
@@ -211,9 +214,12 @@ function buildPrompt({includeAutoSpark=false}={}){
 }
 
 async function refreshPrompt(opts={}){
-  const c=ctx(); if(!c?.setExtensionPrompt) return;
   const text=buildPrompt(opts);
-  await c.setExtensionPrompt(PROMPT_ID,text,text?1:-1,0,false,0);
+  try{
+    setExtensionPrompt(PROMPT_ID, text || '', extension_prompt_types.IN_CHAT, 0);
+  }catch(e){
+    console.error('[HeartPulse] setExtensionPrompt failed', e);
+  }
   renderModelPreview();
 }
 function toast(msg,type='info'){ if(getState().showToasts && window.toastr?.[type]) window.toastr[type](msg,'HeartPulse ❤️‍🔥✨'); }
@@ -241,7 +247,7 @@ function panelHtml(){
   const s=getState(), name=esc(currentCharName()), ui=readUi();
   const prefSet=new Set(s.kinks), activeSet=new Set(s.activeKinks);
   return `<div id="hpPanel" class="hp-panel hp-hidden">
-    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.3.0</div><h2>❤️‍🔥✨ ${name}</h2><p>Связь · искра · намерения · NPC · журнал</p></div><button class="hp-close">×</button></header>
+    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.4.0</div><h2>❤️‍🔥✨ ${name}</h2><p>Связь · искра · намерения · NPC · журнал</p></div><button class="hp-close">×</button></header>
     <nav class="hp-tabs"><button data-tab="pulse" class="active">💗 Пульс</button><button data-tab="spark">❤️‍🔥 Искра</button><button data-tab="intent">🎯 Намерения</button><button data-tab="npc">👥 NPC</button><button data-tab="journal">📜 Журнал</button><button data-tab="model">👁 Модель</button></nav>
     <main class="hp-body">
       <section data-page="pulse" class="hp-page active"><div class="hp-soft-card"><h3>💞 Эмоциональная связь</h3><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: хрупкая забота"><div class="hp-rel-grid">${REL_FIELDS.map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k])}</b><input class="hp-range" data-rel="${k}" type="range" min="-100" max="100" value="${clamp(s.relation[k])}"></label>`).join('')}</div>${s.lastShift?`<div class="hp-shift">✨ ${esc(s.lastShift)}</div>`:''}</div></section>
@@ -347,44 +353,74 @@ function bind(){
 
 function placeFab(){
   const b=document.querySelector('#hpFab'); if(!b) return;
-  const ui=readUi(), pad=6, w=44, h=44;
+  const ui=readUi(), pad=8, w=42, h=42;
   const maxX=Math.max(pad,window.innerWidth-w-pad), maxY=Math.max(pad,window.innerHeight-h-pad);
-  const x=ui.x==null?maxX-6:Math.max(pad,Math.min(maxX,ui.x));
+  const x=ui.x==null?maxX-8:Math.max(pad,Math.min(maxX,ui.x));
   const y=Math.max(pad,Math.min(maxY,ui.y??112));
-  b.style.left=`${x}px`; b.style.top=`${y}px`; b.style.right='auto';
+  b.style.left=`${x}px`; b.style.top=`${y}px`; b.style.right='auto'; b.style.bottom='auto';
 }
 function syncFabVisibility(){ const b=document.querySelector('#hpFab'); if(b) b.style.display=readUi().showFab?'grid':'none'; }
+
+function ensurePanel(){
+  if(document.querySelector('#hpPanel')) return true;
+  try{
+    document.body.insertAdjacentHTML('beforeend',panelHtml());
+    bind();
+    renderModelPreview();
+    return !!document.querySelector('#hpPanel');
+  }catch(e){
+    console.error('[HeartPulse] panel creation failed',e);
+    emergencyOverlay(e);
+    return false;
+  }
+}
+
 function ensureButton(){
   let b=document.querySelector('#hpFab');
   if(!b){
-    b=document.createElement('div');
+    b=document.createElement('button');
+    b.type='button';
     b.id='hpFab';
     b.className='hp-fab';
     b.innerHTML='<span>❤️‍🔥</span><i>✨</i>';
     b.title='HeartPulse Engine';
-    b.setAttribute('role','button');
-    b.setAttribute('tabindex','0');
+    b.setAttribute('aria-label','HeartPulse Engine');
     document.body.appendChild(b);
   }
-  if(b.dataset.hpBound==='1'){
-    placeFab(); syncFabVisibility(); return true;
+  if(b.dataset.hpBound!=='1'){
+    b.dataset.hpBound='1';
+    b.addEventListener('click',e=>{ e.preventDefault(); e.stopPropagation(); togglePanel(); });
+    b.addEventListener('touchend',e=>{ e.preventDefault(); e.stopPropagation(); togglePanel(); },{passive:false});
   }
-  b.dataset.hpBound='1';
   placeFab(); syncFabVisibility();
-
-  // IMPORTANT: deliberately simple, same reliable pattern as working ST extensions.
-  // Dragging is temporarily disabled in v0.3.0 so a mobile tap can never be eaten.
-  $(b).off('.heartpulse');
-  $(b).on('click.heartpulse touchend.heartpulse', function(e){
-    e.preventDefault();
-    e.stopPropagation();
-    openPanel();
-  });
-  b.addEventListener('keydown',e=>{
-    if(e.key==='Enter' || e.key===' '){ e.preventDefault(); openPanel(); }
-  });
   return true;
 }
+
+function togglePanel(){
+  let p=document.querySelector('#hpPanel');
+  if(!p){
+    if(!ensurePanel()) return;
+    p=document.querySelector('#hpPanel');
+  }
+  if(!p) return;
+  const opening=p.classList.contains('hp-hidden');
+  if(opening){
+    // IMPORTANT: show first. Secondary refresh failures must never make the button look dead.
+    p.classList.remove('hp-hidden');
+    try{ renderModelPreview(); }catch(e){ console.error('[HeartPulse] preview refresh failed',e); }
+  }else{
+    p.classList.add('hp-hidden');
+  }
+}
+
+function openPanel(){
+  let p=document.querySelector('#hpPanel');
+  if(!p){ if(!ensurePanel()) return; p=document.querySelector('#hpPanel'); }
+  if(!p) return;
+  p.classList.remove('hp-hidden');
+  try{ renderModelPreview(); }catch(e){ console.error('[HeartPulse] preview refresh failed',e); }
+}
+function closePanel(){ document.querySelector('#hpPanel')?.classList.add('hp-hidden'); }
 
 function registerWandMenuItem(){
   if(document.querySelector('#hpWandMenuItem')) return true;
@@ -395,8 +431,8 @@ function registerWandMenuItem(){
   item.className='list-group-item flex-container flexGap5 interactable';
   item.tabIndex=0;
   item.innerHTML='<i class="fa-solid fa-heart-pulse"></i><span>HeartPulse Engine</span>';
-  $(item).on('click.heartpulse touchend.heartpulse',function(e){e.preventDefault();e.stopPropagation();openPanel();});
-  item.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openPanel();}});
+  item.addEventListener('click',e=>{ e.preventDefault(); e.stopPropagation(); openPanel(); });
+  item.addEventListener('touchend',e=>{ e.preventDefault(); e.stopPropagation(); openPanel(); },{passive:false});
   menu.appendChild(item);
   return true;
 }
@@ -405,7 +441,6 @@ function ensureSettingsEntry(){
   if(document.querySelector('#hpSettingsEntry')) return true;
   const host=document.querySelector('#extensions_settings2') || document.querySelector('#extensions_settings');
   if(!host) return false;
-
   const wrap=document.createElement('div');
   wrap.id='hpSettingsEntry';
   wrap.className='heartpulse-extension-settings';
@@ -417,70 +452,53 @@ function ensureSettingsEntry(){
       </div>
       <div class="inline-drawer-content">
         <div class="hp-settings-mini">
-          <div class="hp-settings-row">
-            <button type="button" id="hpOpenFromSettings" class="menu_button">❤️‍🔥 Открыть HeartPulse</button>
-          </div>
+          <button type="button" id="hpOpenFromSettings" class="menu_button">❤️‍🔥 Открыть HeartPulse</button>
           <label class="hp-settings-check"><input id="hpSettingsShowFab" type="checkbox"> Показывать плавающее сердце</label>
-          <div class="hp-settings-note">Панель можно открыть отсюда даже если плавающая кнопка выключена.</div>
+          <div class="hp-settings-note">Если сердце скрыто, HeartPulse всё равно можно открыть этой кнопкой или из меню 🪄.</div>
         </div>
       </div>
     </div>`;
   host.appendChild(wrap);
-
-  wrap.querySelector('#hpOpenFromSettings')?.setAttribute('data-hp-open','1');
   const openBtn=wrap.querySelector('#hpOpenFromSettings');
-  if(openBtn){
-    $(openBtn).off('.heartpulse').on('click.heartpulse touchend.heartpulse',function(e){
-      e.preventDefault(); e.stopPropagation(); openPanel();
-    });
-  }
+  openBtn?.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();openPanel();});
+  openBtn?.addEventListener('touchend',e=>{e.preventDefault();e.stopPropagation();openPanel();},{passive:false});
   const cb=wrap.querySelector('#hpSettingsShowFab');
   if(cb){
     cb.checked=!!readUi().showFab;
-    cb.addEventListener('change',e=>{
-      const ui=readUi(); ui.showFab=e.target.checked; saveUi(ui); syncFabVisibility();
-    });
+    cb.addEventListener('change',e=>{const ui=readUi();ui.showFab=e.target.checked;saveUi(ui);syncFabVisibility();});
   }
   return true;
 }
+function syncSettingsEntry(){const cb=document.querySelector('#hpSettingsShowFab');if(cb)cb.checked=!!readUi().showFab;}
 
-function syncSettingsEntry(){
-  const cb=document.querySelector('#hpSettingsShowFab');
-  if(cb) cb.checked=!!readUi().showFab;
+function safeOn(type,fn){
+  try{ if(type) eventSource?.on?.(type,fn); }catch(e){ console.warn('[HeartPulse] event bind failed',type,e); }
 }
 
 let __hpInitialized=false;
-async function init(){
-  try{
-    const c=ctx();
-    if(!c) return false;
-    ensureButton();
-    ensureSettingsEntry();
-    registerWandMenuItem();
-    render();
-    await refreshPrompt();
-    if(!__hpInitialized){
-      __hpInitialized=true;
-      window.addEventListener('resize',placeFab);
-      const {eventSource,event_types}=c;
-      eventSource?.on(event_types.CHAT_CHANGED,async()=>{ ensureButton(); ensureSettingsEntry(); render(); await refreshPrompt(); });
-      eventSource?.on(event_types.CHARACTER_EDITED,refreshPrompt);
-      eventSource?.on(event_types.MESSAGE_SENT,async()=>{ await refreshPrompt({includeAutoSpark:true}); });
-      eventSource?.on(event_types.MESSAGE_RECEIVED,async()=>{ setTimeout(parseLatestModelState,80); });
-      eventSource?.on(event_types.GENERATION_ENDED,async()=>{ const s=getState(); if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();} await refreshPrompt({includeAutoSpark:false}); });
-      setInterval(()=>{ ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); syncSettingsEntry(); },1500);
-    }
-    console.log('[HeartPulse] v0.3.0 loaded');
-    return true;
-  }catch(e){
-    console.error('[HeartPulse] init failed',e);
-    return false;
-  }
+function init(){
+  // Same stability pattern as the user's working User Persona Studio / Fetish Manager:
+  // build visible entry points first, then panel, then secondary logic.
+  ensureButton();
+  ensureSettingsEntry();
+  registerWandMenuItem();
+  ensurePanel();
+  try{ refreshPrompt(); }catch(e){ console.error('[HeartPulse] initial prompt failed',e); }
+  if(__hpInitialized) return true;
+  __hpInitialized=true;
+  window.addEventListener('resize',placeFab);
+  safeOn(event_types.CHAT_CHANGED,()=>setTimeout(()=>{ try{render();}catch{} ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); refreshPrompt(); },200));
+  safeOn(event_types.CHARACTER_EDITED,()=>refreshPrompt());
+  safeOn(event_types.GENERATION_STARTED,()=>refreshPrompt({includeAutoSpark:true}));
+  safeOn(event_types.MESSAGE_RECEIVED,()=>setTimeout(parseLatestModelState,80));
+  safeOn(event_types.GENERATION_ENDED,async()=>{const s=getState();if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();}await refreshPrompt({includeAutoSpark:false});});
+  setInterval(()=>{ ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); syncSettingsEntry(); },1800);
+  console.log('[HeartPulse] v0.4.0 ready');
+  return true;
 }
-function startHeartPulse(){
-  init();
-  [350,800,1600,3000,5000].forEach(ms=>setTimeout(()=>{ init(); registerWandMenuItem(); },ms));
-}
-if(window.jQuery) jQuery(document).ready(startHeartPulse);
-else if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',startHeartPulse,{once:true});
-else startHeartPulse();
+
+jQuery(document).ready(()=>{
+  try{ init(); }
+  catch(e){ console.error('[HeartPulse] fatal init error',e); emergencyOverlay(e); }
+  [350,800,1600,3000,5000].forEach(ms=>setTimeout(()=>{ try{ensureButton();ensureSettingsEntry();registerWandMenuItem();if(!document.querySelector('#hpPanel'))ensurePanel();}catch(e){console.error('[HeartPulse] retry failed',e);} },ms));
+});

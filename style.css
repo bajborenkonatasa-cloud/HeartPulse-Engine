@@ -37,3 +37,8 @@
 #hpEmergency .hp-emergency-close{float:right;background:transparent;color:#fff;border:0;font-size:24px}
 #hpEmergency pre{white-space:pre-wrap;word-break:break-word;max-height:55vh;overflow:auto}
 @media(max-width:600px){#hpPanel.hp-panel{left:4px!important;right:4px!important;top:4px!important;bottom:4px!important;width:auto!important;max-width:none!important;border-radius:18px}}
+
+/* v0.4.0 clean shell: panel is a direct body child, same show/hide model as working extensions. */
+#hpPanel.hp-panel{pointer-events:auto!important;visibility:visible;opacity:1;}
+#hpPanel.hp-panel.hp-hidden{display:none!important;}
+#hpFab.hp-fab{appearance:none;-webkit-appearance:none;}
