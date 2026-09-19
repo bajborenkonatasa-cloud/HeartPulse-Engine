@@ -112,23 +112,29 @@ function readUi(){ return Object.assign({showFab:true,x:null,y:112}, safeParse(l
 function saveUi(ui){ try{ localStorage.setItem(UI_KEY,JSON.stringify(ui)); }catch{} }
 
 function getState(){
-  const c=ctx(); if(!c) return defaults();
-  c.chatMetadata ||= {};
-  const meta = c.chatMetadata[META_KEY];
+  const c=ctx();
   const backup = readBackup();
+  let meta = null;
+  try{
+    if(c?.chatMetadata && typeof c.chatMetadata === 'object') meta = c.chatMetadata[META_KEY] || null;
+  }catch(e){ console.warn('[HeartPulse] chatMetadata read failed; using local backup',e); }
   let chosen = meta;
   if(!chosen && backup) chosen=backup;
   else if(chosen && backup && Number(backup.updatedAt||0) > Number(chosen.updatedAt||0)) chosen=backup;
   const s=stateMerge(chosen);
-  c.chatMetadata[META_KEY]=s;
+  try{
+    if(c?.chatMetadata && typeof c.chatMetadata === 'object') c.chatMetadata[META_KEY]=s;
+  }catch(e){ console.warn('[HeartPulse] chatMetadata write failed; local backup will be used',e); }
   return s;
 }
 
 async function saveState(){
-  const c=ctx(); if(!c) return;
+  const c=ctx();
   const s=getState(); s.updatedAt=now();
   writeBackup(s);
-  try{ await c.saveMetadata?.(); }catch(e){ console.warn('[HeartPulse] metadata save failed; backup kept',e); }
+  if(c){
+    try{ await c.saveMetadata?.(); }catch(e){ console.warn('[HeartPulse] metadata save failed; backup kept',e); }
+  }
   await refreshPrompt();
 }
 
@@ -252,18 +258,54 @@ function panelHtml(){
     </main></div></div>`;
 }
 function renderModelPreview(){ const el=document.querySelector('#hpModelPreview'); if(el) el.textContent=buildPrompt({includeAutoSpark:false})||'Ничего не отправляется.'; }
-function render(){ const old=document.querySelector('#hpOverlay'); const open=old&&!old.classList.contains('hp-hidden'); old?.remove(); document.body.insertAdjacentHTML('beforeend',panelHtml()); bind(); if(open) document.querySelector('#hpOverlay')?.classList.remove('hp-hidden'); renderModelPreview(); syncFabVisibility(); }
-function openPanel(){
+function emergencyOverlay(error){
   let overlay=document.querySelector('#hpOverlay');
-  if(!overlay){ render(); overlay=document.querySelector('#hpOverlay'); }
-  if(!overlay){ console.error('[HeartPulse] overlay was not created'); return; }
+  if(!overlay){
+    overlay=document.createElement('div');
+    overlay.id='hpOverlay';
+    overlay.className='hp-overlay';
+    overlay.innerHTML=`<div class="hp-panel"><header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · DIAGNOSTIC</div><h2>❤️‍🔥 HeartPulse</h2><p>Панель открылась, но внутри произошла ошибка.</p></div><button class="hp-close">×</button></header><main class="hp-body"><div class="hp-hot-card"><h3>🧰 Диагностика</h3><p>Скопируй этот текст и пришли мне:</p><pre id="hpEmergencyText" style="white-space:pre-wrap;word-break:break-word"></pre></div></main></div>`;
+    document.body.appendChild(overlay);
+  }
+  const text=overlay.querySelector('#hpEmergencyText');
+  if(text) text.textContent=String(error?.stack || error?.message || error || 'Unknown error');
   overlay.classList.remove('hp-hidden');
-  overlay.style.setProperty('display','flex','important');
-  overlay.style.setProperty('visibility','visible','important');
-  overlay.style.setProperty('opacity','1','important');
-  overlay.style.setProperty('pointer-events','auto','important');
-  renderModelPreview();
-  console.log('[HeartPulse] panel opened');
+  overlay.style.cssText += ';display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;';
+  overlay.querySelector('.hp-close')?.addEventListener('click',closePanel,{once:true});
+}
+function render(){
+  try{
+    const old=document.querySelector('#hpOverlay');
+    const open=old&&!old.classList.contains('hp-hidden');
+    old?.remove();
+    document.body.insertAdjacentHTML('beforeend',panelHtml());
+    bind();
+    if(open) document.querySelector('#hpOverlay')?.classList.remove('hp-hidden');
+    renderModelPreview();
+    syncFabVisibility();
+    return true;
+  }catch(e){
+    console.error('[HeartPulse] render failed',e);
+    emergencyOverlay(e);
+    return false;
+  }
+}
+function openPanel(){
+  try{
+    let overlay=document.querySelector('#hpOverlay');
+    if(!overlay){ render(); overlay=document.querySelector('#hpOverlay'); }
+    if(!overlay) throw new Error('Overlay was not created');
+    overlay.classList.remove('hp-hidden');
+    overlay.style.setProperty('display','flex','important');
+    overlay.style.setProperty('visibility','visible','important');
+    overlay.style.setProperty('opacity','1','important');
+    overlay.style.setProperty('pointer-events','auto','important');
+    renderModelPreview();
+    console.log('[HeartPulse] panel opened');
+  }catch(e){
+    console.error('[HeartPulse] openPanel failed',e);
+    emergencyOverlay(e);
+  }
 }
 function closePanel(){
   const overlay=document.querySelector('#hpOverlay');
@@ -390,11 +432,16 @@ function ensureButton(){
 
   // A normal click opens the panel. Using a real click instead of relying on
   // pointerup makes Android/Chrome taps much more reliable.
-  b.addEventListener('click',e=>{
+  b.onclick=(e)=>{
     if(Date.now()<suppressClickUntil || moved){ moved=false; return; }
+    e?.preventDefault?.(); e?.stopPropagation?.();
+    openPanel();
+  };
+  b.addEventListener('touchend',e=>{
+    if(moved){ moved=false; return; }
     e.preventDefault(); e.stopPropagation();
     openPanel();
-  });
+  },{passive:false});
 
   // Keyboard accessibility and a fallback for browsers that swallow click.
   b.addEventListener('keydown',e=>{
@@ -429,7 +476,11 @@ function ensureSettingsEntry(){
   host.appendChild(wrap);
 
   wrap.querySelector('#hpOpenFromSettings')?.setAttribute('data-hp-open','1');
-  wrap.querySelector('#hpOpenFromSettings')?.addEventListener('click',e=>{ e.preventDefault(); e.stopPropagation(); openPanel(); });
+  const openBtn=wrap.querySelector('#hpOpenFromSettings');
+  if(openBtn){
+    openBtn.onclick=(e)=>{ e?.preventDefault?.(); e?.stopPropagation?.(); openPanel(); };
+    openBtn.addEventListener('touchend',e=>{ e.preventDefault(); e.stopPropagation(); openPanel(); },{passive:false});
+  }
   const cb=wrap.querySelector('#hpSettingsShowFab');
   if(cb){
     cb.checked=!!readUi().showFab;
@@ -455,6 +506,6 @@ async function init(){
   eventSource?.on(event_types.MESSAGE_SENT,async()=>{ await refreshPrompt({includeAutoSpark:true}); });
   eventSource?.on(event_types.MESSAGE_RECEIVED,async()=>{ setTimeout(parseLatestModelState,80); });
   eventSource?.on(event_types.GENERATION_ENDED,async()=>{ const s=getState(); if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();} await refreshPrompt({includeAutoSpark:false}); });
-  console.log('[HeartPulse] v0.2.2 loaded');
+  console.log('[HeartPulse] v0.2.3 loaded');
 }
 init();
