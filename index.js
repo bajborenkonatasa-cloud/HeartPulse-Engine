@@ -287,7 +287,7 @@ function bind(){
   [['#hpEnabled','enabled'],['#hpAutoTrack','autoTrack'],['#hpInjectRel','injectRelation'],['#hpInjectKinks','injectKinks'],['#hpInjectIntent','injectIntentions']].forEach(([id,key])=>q(id)?.addEventListener('change',async e=>{getState()[key]=e.target.checked; await saveState(); renderModelPreview();}));
   q('#hpManual')?.addEventListener('change',async e=>{getState().manualDirective=e.target.value; await saveState();});
   q('#hpOneShot')?.addEventListener('change',async e=>{getState().oneShotDirective=e.target.value; await saveState();});
-  q('#hpShowFab')?.addEventListener('change',e=>{ const ui=readUi(); ui.showFab=e.target.checked; saveUi(ui); syncFabVisibility(); });
+  q('#hpShowFab')?.addEventListener('change',e=>{ const ui=readUi(); ui.showFab=e.target.checked; saveUi(ui); syncFabVisibility(); syncSettingsEntry(); });
 }
 
 function placeFab(){
@@ -300,26 +300,120 @@ function placeFab(){
 }
 function syncFabVisibility(){ const b=document.querySelector('#hpFab'); if(b) b.style.display=readUi().showFab?'grid':'none'; }
 function ensureButton(){
-  if(document.querySelector('#hpFab')) return;
-  const b=document.createElement('button'); b.id='hpFab'; b.className='hp-fab'; b.innerHTML='<span>❤️‍🔥</span><i>✨</i>'; b.title='HeartPulse Engine'; b.setAttribute('aria-label','Open HeartPulse Engine'); document.body.appendChild(b); placeFab(); syncFabVisibility();
-  let drag=false,moved=false,sx=0,sy=0,bx=0,by=0;
-  b.addEventListener('pointerdown',e=>{ drag=true;moved=false;sx=e.clientX;sy=e.clientY;bx=parseFloat(b.style.left)||0;by=parseFloat(b.style.top)||0; b.setPointerCapture?.(e.pointerId); });
-  b.addEventListener('pointermove',e=>{ if(!drag)return; const dx=e.clientX-sx,dy=e.clientY-sy; if(Math.hypot(dx,dy)>6)moved=true; if(moved){ b.style.left=`${bx+dx}px`; b.style.top=`${by+dy}px`; } });
-  const end=e=>{ if(!drag)return; drag=false; if(moved){ const r=b.getBoundingClientRect(),ui=readUi(); ui.x=Math.max(6,Math.min(window.innerWidth-r.width-6,r.left)); ui.y=Math.max(6,Math.min(window.innerHeight-r.height-6,r.top)); saveUi(ui); placeFab(); } else openPanel(); try{b.releasePointerCapture?.(e.pointerId);}catch{} };
-  b.addEventListener('pointerup',end); b.addEventListener('pointercancel',()=>{drag=false;});
+  let b=document.querySelector('#hpFab');
+  if(!b){
+    b=document.createElement('button');
+    b.id='hpFab';
+    b.className='hp-fab';
+    b.innerHTML='<span>❤️‍🔥</span><i>✨</i>';
+    b.title='HeartPulse Engine';
+    b.setAttribute('aria-label','Open HeartPulse Engine');
+    b.type='button';
+    document.body.appendChild(b);
+  }
+
+  // Re-bind safely after hot reloads / chat changes.
+  if(b.dataset.hpBound==='1'){
+    placeFab(); syncFabVisibility(); return;
+  }
+  b.dataset.hpBound='1';
+  placeFab(); syncFabVisibility();
+
+  let dragging=false, moved=false, sx=0, sy=0, bx=0, by=0;
+  let suppressClickUntil=0;
+
+  b.addEventListener('pointerdown',e=>{
+    dragging=true; moved=false;
+    sx=e.clientX; sy=e.clientY;
+    const r=b.getBoundingClientRect(); bx=r.left; by=r.top;
+  }, {passive:true});
+
+  b.addEventListener('pointermove',e=>{
+    if(!dragging) return;
+    const dx=e.clientX-sx, dy=e.clientY-sy;
+    if(Math.hypot(dx,dy)>7) moved=true;
+    if(!moved) return;
+    const pad=6;
+    const x=Math.max(pad,Math.min(window.innerWidth-b.offsetWidth-pad,bx+dx));
+    const y=Math.max(pad,Math.min(window.innerHeight-b.offsetHeight-pad,by+dy));
+    b.style.left=`${x}px`; b.style.top=`${y}px`; b.style.right='auto';
+  }, {passive:true});
+
+  const finishDrag=()=>{
+    if(!dragging) return;
+    dragging=false;
+    if(moved){
+      const r=b.getBoundingClientRect(),ui=readUi();
+      ui.x=Math.round(r.left); ui.y=Math.round(r.top); saveUi(ui);
+      suppressClickUntil=Date.now()+350;
+      placeFab();
+    }
+  };
+  b.addEventListener('pointerup',finishDrag,{passive:true});
+  b.addEventListener('pointercancel',finishDrag,{passive:true});
+
+  // A normal click opens the panel. Using a real click instead of relying on
+  // pointerup makes Android/Chrome taps much more reliable.
+  b.addEventListener('click',e=>{
+    if(Date.now()<suppressClickUntil || moved){ moved=false; return; }
+    e.preventDefault(); e.stopPropagation();
+    openPanel();
+  });
+
+  // Keyboard accessibility and a fallback for browsers that swallow click.
+  b.addEventListener('keydown',e=>{
+    if(e.key==='Enter' || e.key===' '){ e.preventDefault(); openPanel(); }
+  });
 }
-function ensureMenuEntry(){
-  const menu=document.querySelector('#extensionsMenu'); if(!menu || document.querySelector('#hpMenuEntry')) return;
-  const item=document.createElement('div'); item.id='hpMenuEntry'; item.className='list-group-item flex-container flexGap5 interactable'; item.tabIndex=0; item.innerHTML='<span style="font-size:18px">❤️‍🔥✨</span><span>HeartPulse Engine</span>';
-  item.addEventListener('click',openPanel); item.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openPanel();}}); menu.appendChild(item);
+
+function ensureSettingsEntry(){
+  if(document.querySelector('#hpSettingsEntry')) return true;
+  const host=document.querySelector('#extensions_settings2') || document.querySelector('#extensions_settings');
+  if(!host) return false;
+
+  const wrap=document.createElement('div');
+  wrap.id='hpSettingsEntry';
+  wrap.className='heartpulse-extension-settings';
+  wrap.innerHTML=`
+    <div class="inline-drawer">
+      <div class="inline-drawer-toggle inline-drawer-header">
+        <b>❤️‍🔥✨ HeartPulse Engine</b>
+        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+      </div>
+      <div class="inline-drawer-content">
+        <div class="hp-settings-mini">
+          <div class="hp-settings-row">
+            <button type="button" id="hpOpenFromSettings" class="menu_button">❤️‍🔥 Открыть HeartPulse</button>
+          </div>
+          <label class="hp-settings-check"><input id="hpSettingsShowFab" type="checkbox"> Показывать плавающее сердце</label>
+          <div class="hp-settings-note">Панель можно открыть отсюда даже если плавающая кнопка выключена.</div>
+        </div>
+      </div>
+    </div>`;
+  host.appendChild(wrap);
+
+  wrap.querySelector('#hpOpenFromSettings')?.addEventListener('click',openPanel);
+  const cb=wrap.querySelector('#hpSettingsShowFab');
+  if(cb){
+    cb.checked=!!readUi().showFab;
+    cb.addEventListener('change',e=>{
+      const ui=readUi(); ui.showFab=e.target.checked; saveUi(ui); syncFabVisibility();
+    });
+  }
+  return true;
+}
+
+function syncSettingsEntry(){
+  const cb=document.querySelector('#hpSettingsShowFab');
+  if(cb) cb.checked=!!readUi().showFab;
 }
 
 async function init(){
   const c=ctx(); if(!c){ setTimeout(init,800); return; }
-  ensureButton(); ensureMenuEntry(); render(); await refreshPrompt();
-  setInterval(ensureMenuEntry,1500); window.addEventListener('resize',placeFab);
+  ensureButton(); ensureSettingsEntry(); render(); await refreshPrompt();
+  setInterval(()=>{ ensureSettingsEntry(); syncSettingsEntry(); },1500); window.addEventListener('resize',placeFab);
   const {eventSource,event_types}=c;
-  eventSource?.on(event_types.CHAT_CHANGED,async()=>{ getState(); ensureButton(); ensureMenuEntry(); render(); await refreshPrompt(); });
+  eventSource?.on(event_types.CHAT_CHANGED,async()=>{ getState(); ensureButton(); ensureSettingsEntry(); render(); await refreshPrompt(); });
   eventSource?.on(event_types.CHARACTER_EDITED,refreshPrompt);
   eventSource?.on(event_types.MESSAGE_SENT,async()=>{ await refreshPrompt({includeAutoSpark:true}); });
   eventSource?.on(event_types.MESSAGE_RECEIVED,async()=>{ setTimeout(parseLatestModelState,80); });
