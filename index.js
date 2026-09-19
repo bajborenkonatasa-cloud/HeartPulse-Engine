@@ -241,7 +241,7 @@ function panelHtml(){
   const s=getState(), name=esc(currentCharName()), ui=readUi();
   const prefSet=new Set(s.kinks), activeSet=new Set(s.activeKinks);
   return `<div id="hpOverlay" class="hp-overlay hp-hidden"><div class="hp-panel">
-    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.2</div><h2>❤️‍🔥✨ ${name}</h2><p>Связь · искра · намерения · NPC · журнал</p></div><button class="hp-close">×</button></header>
+    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.2.4</div><h2>❤️‍🔥✨ ${name}</h2><p>Связь · искра · намерения · NPC · журнал</p></div><button class="hp-close">×</button></header>
     <nav class="hp-tabs"><button data-tab="pulse" class="active">💗 Пульс</button><button data-tab="spark">❤️‍🔥 Искра</button><button data-tab="intent">🎯 Намерения</button><button data-tab="npc">👥 NPC</button><button data-tab="journal">📜 Журнал</button><button data-tab="model">👁 Модель</button></nav>
     <main class="hp-body">
       <section data-page="pulse" class="hp-page active"><div class="hp-soft-card"><h3>💞 Эмоциональная связь</h3><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: хрупкая забота"><div class="hp-rel-grid">${REL_FIELDS.map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k])}</b><input class="hp-range" data-rel="${k}" type="range" min="-100" max="100" value="${clamp(s.relation[k])}"></label>`).join('')}</div>${s.lastShift?`<div class="hp-shift">✨ ${esc(s.lastShift)}</div>`:''}</div></section>
@@ -316,21 +316,7 @@ function closePanel(){
   overlay.style.removeProperty('opacity');
   overlay.style.removeProperty('pointer-events');
 }
-function installGlobalOpenDelegation(){
-  if(document.documentElement.dataset.hpGlobalOpenBound==='1') return;
-  document.documentElement.dataset.hpGlobalOpenBound='1';
-  const handler=(e)=>{
-    const target=e.target?.closest?.('#hpFab, #hpOpenFromSettings, [data-hp-open="1"]');
-    if(!target) return;
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation?.();
-    openPanel();
-  };
-  document.addEventListener('click',handler,true);
-  document.addEventListener('touchend',handler,true);
-  console.log('[HeartPulse] global open delegation installed');
-}
+function installGlobalOpenDelegation(){ return; }
 
 async function confirmScan(found){
   if(!found.length){ toast('Явных совпадений в карточке не найдено'); return false; }
@@ -496,16 +482,37 @@ function syncSettingsEntry(){
   if(cb) cb.checked=!!readUi().showFab;
 }
 
+let __hpInitialized=false;
 async function init(){
-  const c=ctx(); if(!c){ setTimeout(init,800); return; }
-  installGlobalOpenDelegation(); ensureButton(); ensureSettingsEntry(); render(); await refreshPrompt();
-  setInterval(()=>{ ensureSettingsEntry(); syncSettingsEntry(); },1500); window.addEventListener('resize',placeFab);
-  const {eventSource,event_types}=c;
-  eventSource?.on(event_types.CHAT_CHANGED,async()=>{ getState(); installGlobalOpenDelegation(); ensureButton(); ensureSettingsEntry(); render(); await refreshPrompt(); });
-  eventSource?.on(event_types.CHARACTER_EDITED,refreshPrompt);
-  eventSource?.on(event_types.MESSAGE_SENT,async()=>{ await refreshPrompt({includeAutoSpark:true}); });
-  eventSource?.on(event_types.MESSAGE_RECEIVED,async()=>{ setTimeout(parseLatestModelState,80); });
-  eventSource?.on(event_types.GENERATION_ENDED,async()=>{ const s=getState(); if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();} await refreshPrompt({includeAutoSpark:false}); });
-  console.log('[HeartPulse] v0.2.3 loaded');
+  try{
+    const c=ctx();
+    if(!c) return false;
+    ensureButton();
+    ensureSettingsEntry();
+    render();
+    await refreshPrompt();
+    if(!__hpInitialized){
+      __hpInitialized=true;
+      window.addEventListener('resize',placeFab);
+      const {eventSource,event_types}=c;
+      eventSource?.on(event_types.CHAT_CHANGED,async()=>{ ensureButton(); ensureSettingsEntry(); render(); await refreshPrompt(); });
+      eventSource?.on(event_types.CHARACTER_EDITED,refreshPrompt);
+      eventSource?.on(event_types.MESSAGE_SENT,async()=>{ await refreshPrompt({includeAutoSpark:true}); });
+      eventSource?.on(event_types.MESSAGE_RECEIVED,async()=>{ setTimeout(parseLatestModelState,80); });
+      eventSource?.on(event_types.GENERATION_ENDED,async()=>{ const s=getState(); if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();} await refreshPrompt({includeAutoSpark:false}); });
+      setInterval(()=>{ ensureButton(); ensureSettingsEntry(); syncSettingsEntry(); },1500);
+    }
+    console.log('[HeartPulse] v0.2.4 loaded');
+    return true;
+  }catch(e){
+    console.error('[HeartPulse] init failed',e);
+    return false;
+  }
 }
-init();
+function startHeartPulse(){
+  init();
+  [350,800,1600,3000].forEach(ms=>setTimeout(init,ms));
+}
+if(window.jQuery) jQuery(document).ready(startHeartPulse);
+else if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',startHeartPulse,{once:true});
+else startHeartPulse();
