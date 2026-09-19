@@ -16,3 +16,24 @@
 #hpOverlay.hp-overlay{z-index:2147483646!important;position:fixed!important;inset:0!important;}
 #hpOverlay .hp-panel{z-index:2147483647!important;position:relative!important;}
 #hpFab{z-index:2147483645!important;}
+
+
+/* v0.3.0 — mobile-safe UI shell. Uses the same simple show/hide approach as working ST extensions. */
+#hpFab.hp-fab{
+  position:fixed!important; z-index:99990!important; width:42px!important; height:42px!important;
+  display:grid; place-items:center; cursor:pointer; touch-action:manipulation!important; pointer-events:auto!important;
+  -webkit-tap-highlight-color:transparent; user-select:none;
+}
+#hpPanel.hp-panel{
+  position:fixed!important; z-index:99999!important; top:8px!important; right:8px!important; bottom:8px!important;
+  height:auto!important; width:min(760px,calc(100vw - 16px))!important; max-width:calc(100vw - 16px)!important;
+  display:flex; flex-direction:column; overflow:hidden; border-radius:22px;
+  border:1px solid rgba(255,255,255,.16); box-shadow:0 18px 70px rgba(0,0,0,.62);
+}
+#hpPanel.hp-hidden{display:none!important}
+#hpPanel .hp-body{min-height:0!important; overflow-y:auto!important; -webkit-overflow-scrolling:touch;}
+#hpEmergency.hp-emergency{position:fixed;z-index:100000;left:12px;right:12px;top:12px;display:none}
+#hpEmergency .hp-emergency-card{background:#211629;color:#fff;border:1px solid #d86d69;border-radius:16px;padding:14px;box-shadow:0 12px 48px #0008}
+#hpEmergency .hp-emergency-close{float:right;background:transparent;color:#fff;border:0;font-size:24px}
+#hpEmergency pre{white-space:pre-wrap;word-break:break-word;max-height:55vh;overflow:auto}
+@media(max-width:600px){#hpPanel.hp-panel{left:4px!important;right:4px!important;top:4px!important;bottom:4px!important;width:auto!important;max-width:none!important;border-radius:18px}}

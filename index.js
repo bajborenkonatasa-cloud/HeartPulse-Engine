@@ -240,8 +240,8 @@ async function parseLatestModelState(){
 function panelHtml(){
   const s=getState(), name=esc(currentCharName()), ui=readUi();
   const prefSet=new Set(s.kinks), activeSet=new Set(s.activeKinks);
-  return `<div id="hpOverlay" class="hp-overlay hp-hidden"><div class="hp-panel">
-    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.2.4</div><h2>❤️‍🔥✨ ${name}</h2><p>Связь · искра · намерения · NPC · журнал</p></div><button class="hp-close">×</button></header>
+  return `<div id="hpPanel" class="hp-panel hp-hidden">
+    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.3.0</div><h2>❤️‍🔥✨ ${name}</h2><p>Связь · искра · намерения · NPC · журнал</p></div><button class="hp-close">×</button></header>
     <nav class="hp-tabs"><button data-tab="pulse" class="active">💗 Пульс</button><button data-tab="spark">❤️‍🔥 Искра</button><button data-tab="intent">🎯 Намерения</button><button data-tab="npc">👥 NPC</button><button data-tab="journal">📜 Журнал</button><button data-tab="model">👁 Модель</button></nav>
     <main class="hp-body">
       <section data-page="pulse" class="hp-page active"><div class="hp-soft-card"><h3>💞 Эмоциональная связь</h3><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: хрупкая забота"><div class="hp-rel-grid">${REL_FIELDS.map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k])}</b><input class="hp-range" data-rel="${k}" type="range" min="-100" max="100" value="${clamp(s.relation[k])}"></label>`).join('')}</div>${s.lastShift?`<div class="hp-shift">✨ ${esc(s.lastShift)}</div>`:''}</div></section>
@@ -255,32 +255,31 @@ function panelHtml(){
       <section data-page="npc" class="hp-page"><div class="hp-soft-card"><h3>👥 NPC</h3><p class="hp-muted">NPC из последнего структурного обновления модели.</p><div>${(s.npc||[]).map(n=>`<div class="hp-npc"><b>${esc(n.name||'NPC')}</b><span>${esc(n.state||n.note||'')}</span></div>`).join('')||'<p class="hp-muted">Нет активных NPC.</p>'}</div></div></section>
       <section data-page="journal" class="hp-page"><div class="hp-soft-card"><h3>📜 Журнал сдвигов</h3>${s.journal.map(j=>`<div class="hp-log"><time>${new Date(j.ts).toLocaleString()}</time><span>${esc(j.text)}</span></div>`).join('')||'<p class="hp-muted">Журнал пока пуст.</p>'}</div></section>
       <section data-page="model" class="hp-page"><div class="hp-model-card"><h3>👁 Что увидит модель</h3><div class="hp-switches"><label><input id="hpEnabled" type="checkbox" ${s.enabled?'checked':''}> включить расширение</label><label><input id="hpAutoTrack" type="checkbox" ${s.autoTrack?'checked':''}> авто-обновление</label><label><input id="hpInjectRel" type="checkbox" ${s.injectRelation?'checked':''}> отношения</label><label><input id="hpInjectKinks" type="checkbox" ${s.injectKinks?'checked':''}> искра</label><label><input id="hpInjectIntent" type="checkbox" ${s.injectIntentions?'checked':''}> намерения</label><label><input id="hpShowFab" type="checkbox" ${ui.showFab?'checked':''}> плавающая кнопка</label></div><textarea id="hpManual" class="hp-text" placeholder="Постоянное ручное указание">${esc(s.manualDirective)}</textarea><textarea id="hpOneShot" class="hp-text" placeholder="Только следующий ответ">${esc(s.oneShotDirective)}</textarea><pre id="hpModelPreview"></pre></div></section>
-    </main></div></div>`;
+    </main></div>`;
 }
 function renderModelPreview(){ const el=document.querySelector('#hpModelPreview'); if(el) el.textContent=buildPrompt({includeAutoSpark:false})||'Ничего не отправляется.'; }
 function emergencyOverlay(error){
-  let overlay=document.querySelector('#hpOverlay');
-  if(!overlay){
-    overlay=document.createElement('div');
-    overlay.id='hpOverlay';
-    overlay.className='hp-overlay';
-    overlay.innerHTML=`<div class="hp-panel"><header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · DIAGNOSTIC</div><h2>❤️‍🔥 HeartPulse</h2><p>Панель открылась, но внутри произошла ошибка.</p></div><button class="hp-close">×</button></header><main class="hp-body"><div class="hp-hot-card"><h3>🧰 Диагностика</h3><p>Скопируй этот текст и пришли мне:</p><pre id="hpEmergencyText" style="white-space:pre-wrap;word-break:break-word"></pre></div></main></div>`;
-    document.body.appendChild(overlay);
+  let box=document.querySelector('#hpEmergency');
+  if(!box){
+    box=document.createElement('div');
+    box.id='hpEmergency';
+    box.className='hp-emergency';
+    box.innerHTML=`<div class="hp-emergency-card"><b>❤️‍🔥 HeartPulse — ошибка панели</b><button type="button" class="hp-emergency-close">×</button><pre id="hpEmergencyText"></pre></div>`;
+    document.body.appendChild(box);
+    box.querySelector('.hp-emergency-close')?.addEventListener('click',()=>box.remove());
   }
-  const text=overlay.querySelector('#hpEmergencyText');
+  const text=box.querySelector('#hpEmergencyText');
   if(text) text.textContent=String(error?.stack || error?.message || error || 'Unknown error');
-  overlay.classList.remove('hp-hidden');
-  overlay.style.cssText += ';display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;';
-  overlay.querySelector('.hp-close')?.addEventListener('click',closePanel,{once:true});
+  box.style.display='block';
 }
 function render(){
   try{
-    const old=document.querySelector('#hpOverlay');
-    const open=old&&!old.classList.contains('hp-hidden');
+    const old=document.querySelector('#hpPanel');
+    const wasOpen=old && !old.classList.contains('hp-hidden');
     old?.remove();
     document.body.insertAdjacentHTML('beforeend',panelHtml());
     bind();
-    if(open) document.querySelector('#hpOverlay')?.classList.remove('hp-hidden');
+    if(wasOpen) document.querySelector('#hpPanel')?.classList.remove('hp-hidden');
     renderModelPreview();
     syncFabVisibility();
     return true;
@@ -292,14 +291,11 @@ function render(){
 }
 function openPanel(){
   try{
-    let overlay=document.querySelector('#hpOverlay');
-    if(!overlay){ render(); overlay=document.querySelector('#hpOverlay'); }
-    if(!overlay) throw new Error('Overlay was not created');
-    overlay.classList.remove('hp-hidden');
-    overlay.style.setProperty('display','flex','important');
-    overlay.style.setProperty('visibility','visible','important');
-    overlay.style.setProperty('opacity','1','important');
-    overlay.style.setProperty('pointer-events','auto','important');
+    let panel=document.querySelector('#hpPanel');
+    if(!panel){ render(); panel=document.querySelector('#hpPanel'); }
+    if(!panel) throw new Error('HeartPulse panel was not created');
+    panel.classList.remove('hp-hidden');
+    panel.style.display='flex';
     renderModelPreview();
     console.log('[HeartPulse] panel opened');
   }catch(e){
@@ -308,13 +304,10 @@ function openPanel(){
   }
 }
 function closePanel(){
-  const overlay=document.querySelector('#hpOverlay');
-  if(!overlay) return;
-  overlay.classList.add('hp-hidden');
-  overlay.style.removeProperty('display');
-  overlay.style.removeProperty('visibility');
-  overlay.style.removeProperty('opacity');
-  overlay.style.removeProperty('pointer-events');
+  const panel=document.querySelector('#hpPanel');
+  if(!panel) return;
+  panel.classList.add('hp-hidden');
+  panel.style.removeProperty('display');
 }
 function installGlobalOpenDelegation(){ return; }
 
@@ -332,7 +325,6 @@ async function confirmScan(found){
 function bind(){
   const q=(s)=>document.querySelector(s);
   q('.hp-close')?.addEventListener('click',closePanel);
-  q('#hpOverlay')?.addEventListener('click',e=>{ if(e.target.id==='hpOverlay') closePanel(); });
   document.querySelectorAll('.hp-tabs button').forEach(b=>b.addEventListener('click',()=>{ document.querySelectorAll('.hp-tabs button,.hp-page').forEach(x=>x.classList.remove('active')); b.classList.add('active'); q(`[data-page="${b.dataset.tab}"]`)?.classList.add('active'); renderModelPreview(); }));
   document.querySelectorAll('[data-rel]').forEach(r=>r.addEventListener('input',()=>{ const s=getState(); s.relation[r.dataset.rel]=Number(r.value); document.querySelector(`[data-val="${r.dataset.rel}"]`).textContent=r.value; writeBackup(s); }));
   document.querySelectorAll('[data-rel]').forEach(r=>r.addEventListener('change',saveState));
@@ -365,74 +357,48 @@ function syncFabVisibility(){ const b=document.querySelector('#hpFab'); if(b) b.
 function ensureButton(){
   let b=document.querySelector('#hpFab');
   if(!b){
-    b=document.createElement('button');
+    b=document.createElement('div');
     b.id='hpFab';
     b.className='hp-fab';
     b.innerHTML='<span>❤️‍🔥</span><i>✨</i>';
     b.title='HeartPulse Engine';
-    b.setAttribute('aria-label','Open HeartPulse Engine');
-    b.setAttribute('data-hp-open','1');
-    b.type='button';
+    b.setAttribute('role','button');
+    b.setAttribute('tabindex','0');
     document.body.appendChild(b);
   }
-
-  // Re-bind safely after hot reloads / chat changes.
   if(b.dataset.hpBound==='1'){
-    placeFab(); syncFabVisibility(); return;
+    placeFab(); syncFabVisibility(); return true;
   }
   b.dataset.hpBound='1';
   placeFab(); syncFabVisibility();
 
-  let dragging=false, moved=false, sx=0, sy=0, bx=0, by=0;
-  let suppressClickUntil=0;
-
-  b.addEventListener('pointerdown',e=>{
-    dragging=true; moved=false;
-    sx=e.clientX; sy=e.clientY;
-    const r=b.getBoundingClientRect(); bx=r.left; by=r.top;
-  }, {passive:true});
-
-  b.addEventListener('pointermove',e=>{
-    if(!dragging) return;
-    const dx=e.clientX-sx, dy=e.clientY-sy;
-    if(Math.hypot(dx,dy)>7) moved=true;
-    if(!moved) return;
-    const pad=6;
-    const x=Math.max(pad,Math.min(window.innerWidth-b.offsetWidth-pad,bx+dx));
-    const y=Math.max(pad,Math.min(window.innerHeight-b.offsetHeight-pad,by+dy));
-    b.style.left=`${x}px`; b.style.top=`${y}px`; b.style.right='auto';
-  }, {passive:true});
-
-  const finishDrag=()=>{
-    if(!dragging) return;
-    dragging=false;
-    if(moved){
-      const r=b.getBoundingClientRect(),ui=readUi();
-      ui.x=Math.round(r.left); ui.y=Math.round(r.top); saveUi(ui);
-      suppressClickUntil=Date.now()+350;
-      placeFab();
-    }
-  };
-  b.addEventListener('pointerup',finishDrag,{passive:true});
-  b.addEventListener('pointercancel',finishDrag,{passive:true});
-
-  // A normal click opens the panel. Using a real click instead of relying on
-  // pointerup makes Android/Chrome taps much more reliable.
-  b.onclick=(e)=>{
-    if(Date.now()<suppressClickUntil || moved){ moved=false; return; }
-    e?.preventDefault?.(); e?.stopPropagation?.();
+  // IMPORTANT: deliberately simple, same reliable pattern as working ST extensions.
+  // Dragging is temporarily disabled in v0.3.0 so a mobile tap can never be eaten.
+  $(b).off('.heartpulse');
+  $(b).on('click.heartpulse touchend.heartpulse', function(e){
+    e.preventDefault();
+    e.stopPropagation();
     openPanel();
-  };
-  b.addEventListener('touchend',e=>{
-    if(moved){ moved=false; return; }
-    e.preventDefault(); e.stopPropagation();
-    openPanel();
-  },{passive:false});
-
-  // Keyboard accessibility and a fallback for browsers that swallow click.
+  });
   b.addEventListener('keydown',e=>{
     if(e.key==='Enter' || e.key===' '){ e.preventDefault(); openPanel(); }
   });
+  return true;
+}
+
+function registerWandMenuItem(){
+  if(document.querySelector('#hpWandMenuItem')) return true;
+  const menu=document.querySelector('#extensionsMenu');
+  if(!menu) return false;
+  const item=document.createElement('div');
+  item.id='hpWandMenuItem';
+  item.className='list-group-item flex-container flexGap5 interactable';
+  item.tabIndex=0;
+  item.innerHTML='<i class="fa-solid fa-heart-pulse"></i><span>HeartPulse Engine</span>';
+  $(item).on('click.heartpulse touchend.heartpulse',function(e){e.preventDefault();e.stopPropagation();openPanel();});
+  item.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openPanel();}});
+  menu.appendChild(item);
+  return true;
 }
 
 function ensureSettingsEntry(){
@@ -464,8 +430,9 @@ function ensureSettingsEntry(){
   wrap.querySelector('#hpOpenFromSettings')?.setAttribute('data-hp-open','1');
   const openBtn=wrap.querySelector('#hpOpenFromSettings');
   if(openBtn){
-    openBtn.onclick=(e)=>{ e?.preventDefault?.(); e?.stopPropagation?.(); openPanel(); };
-    openBtn.addEventListener('touchend',e=>{ e.preventDefault(); e.stopPropagation(); openPanel(); },{passive:false});
+    $(openBtn).off('.heartpulse').on('click.heartpulse touchend.heartpulse',function(e){
+      e.preventDefault(); e.stopPropagation(); openPanel();
+    });
   }
   const cb=wrap.querySelector('#hpSettingsShowFab');
   if(cb){
@@ -489,6 +456,7 @@ async function init(){
     if(!c) return false;
     ensureButton();
     ensureSettingsEntry();
+    registerWandMenuItem();
     render();
     await refreshPrompt();
     if(!__hpInitialized){
@@ -500,9 +468,9 @@ async function init(){
       eventSource?.on(event_types.MESSAGE_SENT,async()=>{ await refreshPrompt({includeAutoSpark:true}); });
       eventSource?.on(event_types.MESSAGE_RECEIVED,async()=>{ setTimeout(parseLatestModelState,80); });
       eventSource?.on(event_types.GENERATION_ENDED,async()=>{ const s=getState(); if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();} await refreshPrompt({includeAutoSpark:false}); });
-      setInterval(()=>{ ensureButton(); ensureSettingsEntry(); syncSettingsEntry(); },1500);
+      setInterval(()=>{ ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); syncSettingsEntry(); },1500);
     }
-    console.log('[HeartPulse] v0.2.4 loaded');
+    console.log('[HeartPulse] v0.3.0 loaded');
     return true;
   }catch(e){
     console.error('[HeartPulse] init failed',e);
@@ -511,7 +479,7 @@ async function init(){
 }
 function startHeartPulse(){
   init();
-  [350,800,1600,3000].forEach(ms=>setTimeout(init,ms));
+  [350,800,1600,3000,5000].forEach(ms=>setTimeout(()=>{ init(); registerWandMenuItem(); },ms));
 }
 if(window.jQuery) jQuery(document).ready(startHeartPulse);
 else if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',startHeartPulse,{once:true});
