@@ -8,3 +8,7 @@
 #hpSettingsEntry .hp-settings-check{display:flex;align-items:center;gap:8px;opacity:.95}
 #hpSettingsEntry .hp-settings-note{font-size:.88em;opacity:.7;line-height:1.35}
 #hpFab{pointer-events:auto!important;-webkit-tap-highlight-color:transparent}
+/* v0.2.2 mobile hardening */
+#hpOverlay.hp-overlay{pointer-events:auto!important;visibility:visible;opacity:1}
+#hpOverlay.hp-overlay.hp-hidden{display:none!important}
+#hpOpenFromSettings,#hpFab{touch-action:manipulation!important;pointer-events:auto!important}

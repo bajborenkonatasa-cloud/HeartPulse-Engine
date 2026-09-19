@@ -253,7 +253,42 @@ function panelHtml(){
 }
 function renderModelPreview(){ const el=document.querySelector('#hpModelPreview'); if(el) el.textContent=buildPrompt({includeAutoSpark:false})||'Ничего не отправляется.'; }
 function render(){ const old=document.querySelector('#hpOverlay'); const open=old&&!old.classList.contains('hp-hidden'); old?.remove(); document.body.insertAdjacentHTML('beforeend',panelHtml()); bind(); if(open) document.querySelector('#hpOverlay')?.classList.remove('hp-hidden'); renderModelPreview(); syncFabVisibility(); }
-function openPanel(){ if(!document.querySelector('#hpOverlay')) render(); document.querySelector('#hpOverlay')?.classList.remove('hp-hidden'); renderModelPreview(); }
+function openPanel(){
+  let overlay=document.querySelector('#hpOverlay');
+  if(!overlay){ render(); overlay=document.querySelector('#hpOverlay'); }
+  if(!overlay){ console.error('[HeartPulse] overlay was not created'); return; }
+  overlay.classList.remove('hp-hidden');
+  overlay.style.setProperty('display','flex','important');
+  overlay.style.setProperty('visibility','visible','important');
+  overlay.style.setProperty('opacity','1','important');
+  overlay.style.setProperty('pointer-events','auto','important');
+  renderModelPreview();
+  console.log('[HeartPulse] panel opened');
+}
+function closePanel(){
+  const overlay=document.querySelector('#hpOverlay');
+  if(!overlay) return;
+  overlay.classList.add('hp-hidden');
+  overlay.style.removeProperty('display');
+  overlay.style.removeProperty('visibility');
+  overlay.style.removeProperty('opacity');
+  overlay.style.removeProperty('pointer-events');
+}
+function installGlobalOpenDelegation(){
+  if(document.documentElement.dataset.hpGlobalOpenBound==='1') return;
+  document.documentElement.dataset.hpGlobalOpenBound='1';
+  const handler=(e)=>{
+    const target=e.target?.closest?.('#hpFab, #hpOpenFromSettings, [data-hp-open="1"]');
+    if(!target) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation?.();
+    openPanel();
+  };
+  document.addEventListener('click',handler,true);
+  document.addEventListener('touchend',handler,true);
+  console.log('[HeartPulse] global open delegation installed');
+}
 
 async function confirmScan(found){
   if(!found.length){ toast('Явных совпадений в карточке не найдено'); return false; }
@@ -268,8 +303,8 @@ async function confirmScan(found){
 
 function bind(){
   const q=(s)=>document.querySelector(s);
-  q('.hp-close')?.addEventListener('click',()=>q('#hpOverlay')?.classList.add('hp-hidden'));
-  q('#hpOverlay')?.addEventListener('click',e=>{ if(e.target.id==='hpOverlay') q('#hpOverlay').classList.add('hp-hidden'); });
+  q('.hp-close')?.addEventListener('click',closePanel);
+  q('#hpOverlay')?.addEventListener('click',e=>{ if(e.target.id==='hpOverlay') closePanel(); });
   document.querySelectorAll('.hp-tabs button').forEach(b=>b.addEventListener('click',()=>{ document.querySelectorAll('.hp-tabs button,.hp-page').forEach(x=>x.classList.remove('active')); b.classList.add('active'); q(`[data-page="${b.dataset.tab}"]`)?.classList.add('active'); renderModelPreview(); }));
   document.querySelectorAll('[data-rel]').forEach(r=>r.addEventListener('input',()=>{ const s=getState(); s.relation[r.dataset.rel]=Number(r.value); document.querySelector(`[data-val="${r.dataset.rel}"]`).textContent=r.value; writeBackup(s); }));
   document.querySelectorAll('[data-rel]').forEach(r=>r.addEventListener('change',saveState));
@@ -308,6 +343,7 @@ function ensureButton(){
     b.innerHTML='<span>❤️‍🔥</span><i>✨</i>';
     b.title='HeartPulse Engine';
     b.setAttribute('aria-label','Open HeartPulse Engine');
+    b.setAttribute('data-hp-open','1');
     b.type='button';
     document.body.appendChild(b);
   }
@@ -392,7 +428,8 @@ function ensureSettingsEntry(){
     </div>`;
   host.appendChild(wrap);
 
-  wrap.querySelector('#hpOpenFromSettings')?.addEventListener('click',openPanel);
+  wrap.querySelector('#hpOpenFromSettings')?.setAttribute('data-hp-open','1');
+  wrap.querySelector('#hpOpenFromSettings')?.addEventListener('click',e=>{ e.preventDefault(); e.stopPropagation(); openPanel(); });
   const cb=wrap.querySelector('#hpSettingsShowFab');
   if(cb){
     cb.checked=!!readUi().showFab;
@@ -410,14 +447,14 @@ function syncSettingsEntry(){
 
 async function init(){
   const c=ctx(); if(!c){ setTimeout(init,800); return; }
-  ensureButton(); ensureSettingsEntry(); render(); await refreshPrompt();
+  installGlobalOpenDelegation(); ensureButton(); ensureSettingsEntry(); render(); await refreshPrompt();
   setInterval(()=>{ ensureSettingsEntry(); syncSettingsEntry(); },1500); window.addEventListener('resize',placeFab);
   const {eventSource,event_types}=c;
-  eventSource?.on(event_types.CHAT_CHANGED,async()=>{ getState(); ensureButton(); ensureSettingsEntry(); render(); await refreshPrompt(); });
+  eventSource?.on(event_types.CHAT_CHANGED,async()=>{ getState(); installGlobalOpenDelegation(); ensureButton(); ensureSettingsEntry(); render(); await refreshPrompt(); });
   eventSource?.on(event_types.CHARACTER_EDITED,refreshPrompt);
   eventSource?.on(event_types.MESSAGE_SENT,async()=>{ await refreshPrompt({includeAutoSpark:true}); });
   eventSource?.on(event_types.MESSAGE_RECEIVED,async()=>{ setTimeout(parseLatestModelState,80); });
   eventSource?.on(event_types.GENERATION_ENDED,async()=>{ const s=getState(); if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();} await refreshPrompt({includeAutoSpark:false}); });
-  console.log('[HeartPulse] v0.2 loaded');
+  console.log('[HeartPulse] v0.2.2 loaded');
 }
 init();
