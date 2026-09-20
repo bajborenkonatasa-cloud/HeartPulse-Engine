@@ -57,7 +57,7 @@ This build intentionally disables dragging of the floating button to eliminate A
 - Full 25-value palette remains stored locally, but the normal model prompt sends only the currently salient 1–6 values.
 - The full key vocabulary is still supplied to auto-tracking so the model may activate a different emotion when the scene changes.
 
-## v0.9.0
+## v0.9.2
 
 - Исправлен разбор служебного HeartPulse-пакета: вложенный JSON теперь читается корректно, а не обрезается на первой `}`.
 - Добавлены резервные форматы пакета и повторная проверка после завершения генерации.
@@ -68,7 +68,6 @@ This build intentionally disables dragging of the floating button to eliminate A
 - Локальный анализ карточки ищет как встроенные категории, так и сохранённые пользовательские названия.
 
 
-## v0.9.1
-- Fixed the default Emotional Pulse layout so a fresh/uninitialized chat shows 6 slots instead of 5.
-- The sixth default slot is Sympathy.
-- The normal model prompt still sends only up to 6 active/salient feelings; the remaining stored palette stays local.
+## v0.9.2
+- Restored six default Pulse slots.
+- Added recovery for models that output the HeartPulse JSON packet as bare visible JSON instead of wrapping it. HeartPulse can now recognize, apply, and strip a trailing schema-matching packet from the chat.
