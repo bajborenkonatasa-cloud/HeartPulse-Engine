@@ -56,3 +56,13 @@ This build intentionally disables dragging of the floating button to eliminate A
 - 6 salient feelings on the Pulse screen.
 - Full 25-value palette remains stored locally, but the normal model prompt sends only the currently salient 1–6 values.
 - The full key vocabulary is still supplied to auto-tracking so the model may activate a different emotion when the scene changes.
+
+## v0.9.0
+
+- Исправлен разбор служебного HeartPulse-пакета: вложенный JSON теперь читается корректно, а не обрезается на первой `}`.
+- Добавлены резервные форматы пакета и повторная проверка после завершения генерации.
+- Во вкладке «Модель» появилась диагностика авто-анкеты и кнопка ручной проверки последнего ответа.
+- Добавлена фиксация русского языка: английское название кинка не должно переключать ролевую и анкету на английский.
+- Расширен локальный словарь предпочтений, включая секс по телефону/голос, секстинг и другие категории.
+- Пользовательские кинки теперь можно сохранять как карточку «название + описание», включать/выключать и удалять.
+- Локальный анализ карточки ищет как встроенные категории, так и сохранённые пользовательские названия.

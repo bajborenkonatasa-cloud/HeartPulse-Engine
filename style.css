@@ -242,3 +242,17 @@
 #hpAllFeelings{margin-top:12px}
 #hpAllFeelings summary{cursor:pointer}
 @media(max-width:520px){.hp-rel-active{grid-template-columns:1fr 1fr}.hp-feeling-note{font-size:13px}}
+
+/* v0.9.0 — reliable auto-sheet diagnostics + richer custom kink cards */
+.hp-custom-kinks{margin-top:14px;padding-top:11px;border-top:1px solid rgba(255,255,255,.08)}
+.hp-custom-form{display:grid;gap:7px;padding:9px;border-radius:12px;background:rgba(255,255,255,.025);border:1px solid rgba(255,126,86,.12)}
+.hp-custom-form .hp-text{min-height:64px!important}
+.hp-custom-form button,.hp-diagnostics button{justify-self:start;border:1px solid rgba(255,255,255,.16);border-radius:10px;background:rgba(255,255,255,.06);color:#fff;padding:7px 10px;font-size:11.5px}
+.hp-custom-list{display:grid;gap:7px;margin-top:9px}
+.hp-custom-card{display:grid;grid-template-columns:1fr auto;gap:5px 8px;align-items:center;padding:9px;border-radius:11px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08)}
+.hp-custom-card label{min-width:0;display:flex;align-items:center;gap:7px}
+.hp-custom-card small{grid-column:1/2;color:#bcaebe;line-height:1.3;white-space:pre-wrap}
+.hp-custom-card button{grid-column:2;grid-row:1/3;border:1px solid rgba(255,255,255,.12);border-radius:9px;background:transparent;color:#ddd;padding:6px 8px}
+.hp-diagnostics{display:grid;gap:5px;margin:0 0 9px;padding:9px 10px;border-radius:11px;border:1px solid rgba(92,206,187,.23);background:rgba(92,206,187,.055);font-size:11px;line-height:1.3;color:#cdebe5}
+.hp-diagnostics b{color:#e8fff8}
+.hp-diagnostics .hp-diag-error{color:#ffaaa4}
