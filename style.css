@@ -210,3 +210,28 @@
   .hp-tabs button{padding:6px 7px!important;font-size:11.5px!important}
   .hp-soft-card h3,.hp-hot-card h3,.hp-gold-card h3,.hp-model-card h3{font-size:17px!important}
 }
+
+/* v0.7.3 — resizable full prompt preview */
+#hpModelPreview.hp-preview-box{
+  display:block;
+  box-sizing:border-box;
+  width:100%;
+  min-height:150px;
+  height:240px;
+  max-height:none!important;
+  resize:vertical!important;
+  overflow:auto!important;
+  white-space:pre-wrap;
+  word-break:break-word;
+  border-radius:12px;
+  padding:10px;
+  background:#090c11;
+  border:1px dashed rgba(80,220,206,.34);
+  color:#d2e7e5;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:11px;
+  line-height:1.35;
+}
+@media(max-width:600px){
+  #hpModelPreview.hp-preview-box{min-height:130px;height:210px;font-size:10.5px;}
+}
