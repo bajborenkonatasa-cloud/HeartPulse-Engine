@@ -24,7 +24,7 @@ const REL_FIELDS = [
 
 const REL_LABEL = Object.fromEntries(REL_FIELDS);
 const REL_KEYS = REL_FIELDS.map(([k]) => k);
-const DEFAULT_VISIBLE_REL = ['love','trust','affection','tenderness','respect'];
+const DEFAULT_VISIBLE_REL = ['love','trust','affection','tenderness','respect','sympathy'];
 
 
 const KINK_LIBRARY = [
@@ -314,7 +314,6 @@ function buildPrompt({includeAutoSpark=false}={}){
   const name=currentCharName(); s.charName=name;
   const blocks=[`[HEARTPULSE private guidance for ${name}; never quote this block.]`,`Agency: write only ${name}, NPCs and world; never write {{user}}'s actions, dialogue, thoughts, feelings, decisions or consent.`];
   if(s.injectRelation){
-    const vals=allFeelingsCompact(s);
     const active=visibleFeelingKeys(s).map(k=>`${REL_LABEL[k]}:${clamp(s.relation[k],0,REL_MAX)}`).join(',');
     blocks.push(`[REL 0-${REL_MAX}] ${s.relationLabel}; Active/salient now=${active}. Only these currently salient feeling values are sent as continuity cues; the rest of HeartPulse's stored palette stays local.`);
     if(s.feelingNote) blocks.push(`[FEELING NOTE] ${s.feelingNote}`);

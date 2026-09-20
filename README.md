@@ -66,3 +66,9 @@ This build intentionally disables dragging of the floating button to eliminate A
 - Расширен локальный словарь предпочтений, включая секс по телефону/голос, секстинг и другие категории.
 - Пользовательские кинки теперь можно сохранять как карточку «название + описание», включать/выключать и удалять.
 - Локальный анализ карточки ищет как встроенные категории, так и сохранённые пользовательские названия.
+
+
+## v0.9.1
+- Fixed the default Emotional Pulse layout so a fresh/uninitialized chat shows 6 slots instead of 5.
+- The sixth default slot is Sympathy.
+- The normal model prompt still sends only up to 6 active/salient feelings; the remaining stored palette stays local.
