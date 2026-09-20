@@ -43,3 +43,10 @@ This build intentionally disables dragging of the floating button to eliminate A
 - Auto Spark now uses intensity as a behavior-strength hint while chance controls whether it fires after cooldown.
 - Journal is bounded: recent shifts stay visible; old low-level entries are compacted while current state, goals and NPC profiles remain stored.
 - Manual directives are explicitly scoped to {{char}} / NPC and can be persistent or next-response-only.
+
+
+## v0.7.2
+- Ещё более компактный мобильный интерфейс.
+- Подтверждение перед завершением долгой цели.
+- В журнале завершённую цель можно вернуть обратно кнопкой «↩ Вернуть цель».
+- Исправлена отображаемая версия в шапке.
