@@ -250,8 +250,8 @@ async function parseLatestModelState(){
 function panelHtml(){
   const s=getState(), name=esc(currentCharName()), ui=readUi();
   const prefSet=new Set(s.kinks), activeSet=new Set(s.activeKinks);
-  return `<div id="hpPanel" class="hp-panel hp-hidden">
-    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.5.0</div><h2>❤️‍🔥✨ ${name}</h2><p>Связь · искра · намерения · NPC · журнал</p></div><button class="hp-close">×</button></header>
+  return `<div id="hpOverlay" class="hp-overlay hp-hidden"><div id="hpPanel" class="hp-panel">
+    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.5.1</div><h2>❤️‍🔥✨ ${name}</h2><p>Связь · искра · намерения · NPC · журнал</p></div><button class="hp-close">×</button></header>
     <nav class="hp-tabs"><button data-tab="pulse" class="active">💗 Пульс</button><button data-tab="spark">❤️‍🔥 Искра</button><button data-tab="intent">🎯 Намерения</button><button data-tab="npc">👥 NPC</button><button data-tab="journal">📜 Журнал</button><button data-tab="model">👁 Модель</button></nav>
     <main class="hp-body">
       <section data-page="pulse" class="hp-page active"><div class="hp-soft-card"><h3>💞 Эмоциональная связь</h3><div class="hp-auto-status ${s.autoTrack?'on':''}">${s.autoTrack?'🤖 Авто-динамика включена: модель предложит только реальные изменения после ответа. Ползунки обновятся сами.':'🖐️ Авто-динамика выключена: значения меняешь ты вручную.'}</div><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: хрупкая забота"><div class="hp-rel-grid hp-rel-core">${REL_FIELDS.filter(([k])=>CORE_REL_KEYS.has(k)).map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k])}</b><input class="hp-range" data-rel="${k}" type="range" min="-100" max="100" value="${clamp(s.relation[k])}"></label>`).join('')}</div><details id="hpExtraFeelings" class="hp-extra-feelings" ${ui.extrasOpen?'open':''}><summary>✨ Дополнительные чувства (${REL_FIELDS.length-CORE_REL_KEYS.size})</summary><div class="hp-rel-grid">${REL_FIELDS.filter(([k])=>!CORE_REL_KEYS.has(k)).map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k])}</b><input class="hp-range" data-rel="${k}" type="range" min="-100" max="100" value="${clamp(s.relation[k])}"></label>`).join('')}</div></details>${s.lastShift?`<div class="hp-shift">✨ Последний сдвиг: ${esc(s.lastShift)}</div>`:''}<p class="hp-muted hp-tip">Можно ничего не двигать руками. Ползунки — это ещё и ручная коррекция: если модель оценила чувство не так, просто поправь значение.</p></div></section>
@@ -265,7 +265,7 @@ function panelHtml(){
       <section data-page="npc" class="hp-page"><div class="hp-soft-card"><h3>👥 NPC</h3><p class="hp-muted">NPC из последнего структурного обновления модели.</p><div>${(s.npc||[]).map(n=>`<div class="hp-npc"><b>${esc(n.name||'NPC')}</b><span>${esc(n.state||n.note||'')}</span></div>`).join('')||'<p class="hp-muted">Нет активных NPC.</p>'}</div></div></section>
       <section data-page="journal" class="hp-page"><div class="hp-soft-card"><h3>📜 Журнал сдвигов</h3>${s.journal.map(j=>`<div class="hp-log"><time>${new Date(j.ts).toLocaleString()}</time><span>${esc(j.text)}</span></div>`).join('')||'<p class="hp-muted">Журнал пока пуст.</p>'}</div></section>
       <section data-page="model" class="hp-page"><div class="hp-model-card"><h3>👁 Что увидит модель</h3><div class="hp-switches"><label><input id="hpEnabled" type="checkbox" ${s.enabled?'checked':''}> включить расширение</label><label><input id="hpAutoTrack" type="checkbox" ${s.autoTrack?'checked':''}> авто-обновление</label><label><input id="hpInjectRel" type="checkbox" ${s.injectRelation?'checked':''}> отношения</label><label><input id="hpInjectKinks" type="checkbox" ${s.injectKinks?'checked':''}> искра</label><label><input id="hpInjectIntent" type="checkbox" ${s.injectIntentions?'checked':''}> намерения</label><label><input id="hpShowFab" type="checkbox" ${ui.showFab?'checked':''}> плавающая кнопка</label></div><textarea id="hpManual" class="hp-text" placeholder="Постоянное ручное указание">${esc(s.manualDirective)}</textarea><textarea id="hpOneShot" class="hp-text" placeholder="Только следующий ответ">${esc(s.oneShotDirective)}</textarea><pre id="hpModelPreview"></pre></div></section>
-    </main></div>`;
+    </main></div></div>`;
 }
 function renderModelPreview(){ const el=document.querySelector('#hpModelPreview'); if(el) el.textContent=buildPrompt({includeAutoSpark:false})||'Ничего не отправляется.'; }
 function emergencyOverlay(error){
@@ -284,13 +284,14 @@ function emergencyOverlay(error){
 }
 function render(){
   try{
-    const old=document.querySelector('#hpPanel');
+    const old=document.querySelector('#hpOverlay');
     const wasOpen=old && !old.classList.contains('hp-hidden');
     old?.remove();
     document.body.insertAdjacentHTML('beforeend',panelHtml());
     bind();
-    if(wasOpen) document.querySelector('#hpPanel')?.classList.remove('hp-hidden');
-    renderModelPreview();
+    const overlay=document.querySelector('#hpOverlay');
+    if(wasOpen) overlay?.classList.remove('hp-hidden');
+    try{ renderModelPreview(); }catch(e){ console.error('[HeartPulse] preview refresh failed',e); }
     syncFabVisibility();
     return true;
   }catch(e){
@@ -301,12 +302,15 @@ function render(){
 }
 function openPanel(){
   try{
-    let panel=document.querySelector('#hpPanel');
-    if(!panel){ render(); panel=document.querySelector('#hpPanel'); }
-    if(!panel) throw new Error('HeartPulse panel was not created');
-    panel.classList.remove('hp-hidden');
-    panel.style.display='flex';
-    renderModelPreview();
+    let overlay=document.querySelector('#hpOverlay');
+    if(!overlay){
+      if(!ensurePanel()) throw new Error('HeartPulse panel was not created');
+      overlay=document.querySelector('#hpOverlay');
+    }
+    if(!overlay) throw new Error('HeartPulse overlay was not created');
+    overlay.classList.remove('hp-hidden');
+    overlay.style.setProperty('display','flex','important');
+    requestAnimationFrame(()=>{ try{ renderModelPreview(); }catch(e){ console.error('[HeartPulse] preview refresh failed',e); } });
     console.log('[HeartPulse] panel opened');
   }catch(e){
     console.error('[HeartPulse] openPanel failed',e);
@@ -314,10 +318,10 @@ function openPanel(){
   }
 }
 function closePanel(){
-  const panel=document.querySelector('#hpPanel');
-  if(!panel) return;
-  panel.classList.add('hp-hidden');
-  panel.style.removeProperty('display');
+  const overlay=document.querySelector('#hpOverlay');
+  if(!overlay) return;
+  overlay.classList.add('hp-hidden');
+  overlay.style.removeProperty('display');
 }
 function installGlobalOpenDelegation(){ return; }
 
@@ -367,12 +371,13 @@ function placeFab(){
 function syncFabVisibility(){ const b=document.querySelector('#hpFab'); if(b) b.style.display=readUi().showFab?'grid':'none'; }
 
 function ensurePanel(){
-  if(document.querySelector('#hpPanel')) return true;
+  if(document.querySelector('#hpOverlay') && document.querySelector('#hpPanel')) return true;
   try{
+    document.querySelector('#hpOverlay')?.remove();
     document.body.insertAdjacentHTML('beforeend',panelHtml());
     bind();
-    renderModelPreview();
-    return !!document.querySelector('#hpPanel');
+    try{ renderModelPreview(); }catch(e){ console.error('[HeartPulse] preview refresh failed',e); }
+    return !!document.querySelector('#hpOverlay') && !!document.querySelector('#hpPanel');
   }catch(e){
     console.error('[HeartPulse] panel creation failed',e);
     emergencyOverlay(e);
@@ -432,20 +437,14 @@ function ensureButton(){
 }
 
 function togglePanel(){
-  let p=document.querySelector('#hpPanel');
-  if(!p){
+  let overlay=document.querySelector('#hpOverlay');
+  if(!overlay){
     if(!ensurePanel()) return;
-    p=document.querySelector('#hpPanel');
+    overlay=document.querySelector('#hpOverlay');
   }
-  if(!p) return;
-  const opening=p.classList.contains('hp-hidden');
-  if(opening){
-    // IMPORTANT: show first. Secondary refresh failures must never make the button look dead.
-    p.classList.remove('hp-hidden');
-    try{ renderModelPreview(); }catch(e){ console.error('[HeartPulse] preview refresh failed',e); }
-  }else{
-    p.classList.add('hp-hidden');
-  }
+  if(!overlay) return;
+  if(overlay.classList.contains('hp-hidden')) openPanel();
+  else closePanel();
 }
 
 function registerWandMenuItem(){
@@ -517,12 +516,12 @@ function init(){
   safeOn(event_types.MESSAGE_RECEIVED,()=>setTimeout(parseLatestModelState,80));
   safeOn(event_types.GENERATION_ENDED,async()=>{const s=getState();if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();}await refreshPrompt({includeAutoSpark:false});});
   setInterval(()=>{ ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); syncSettingsEntry(); },1800);
-  console.log('[HeartPulse] v0.5.0 ready');
+  console.log('[HeartPulse] v0.5.1 ready');
   return true;
 }
 
 jQuery(document).ready(()=>{
   try{ init(); }
   catch(e){ console.error('[HeartPulse] fatal init error',e); emergencyOverlay(e); }
-  [350,800,1600,3000,5000].forEach(ms=>setTimeout(()=>{ try{ensureButton();ensureSettingsEntry();registerWandMenuItem();if(!document.querySelector('#hpPanel'))ensurePanel();}catch(e){console.error('[HeartPulse] retry failed',e);} },ms));
+  [350,800,1600,3000,5000].forEach(ms=>setTimeout(()=>{ try{ensureButton();ensureSettingsEntry();registerWandMenuItem();if(!document.querySelector('#hpOverlay'))ensurePanel();}catch(e){console.error('[HeartPulse] retry failed',e);} },ms));
 });

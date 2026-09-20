@@ -57,3 +57,50 @@
 .hp-extra-feelings .hp-rel-grid{padding:0 14px 14px}
 .hp-tip{font-size:12px;line-height:1.45;margin-top:14px}
 @media(max-width:600px){#hpPanel.hp-panel{left:4px!important;right:4px!important;width:auto!important}.hp-rel-core{grid-template-columns:1fr 1fr}.hp-extra-feelings .hp-rel-grid{grid-template-columns:1fr}}
+
+/* v0.5.1 — authoritative mobile shell: one overlay, one panel, no ambiguous hidden state */
+#hpOverlay.hp-overlay{
+  position:fixed!important;
+  inset:0!important;
+  z-index:2147483646!important;
+  display:flex!important;
+  justify-content:flex-end!important;
+  align-items:stretch!important;
+  background:rgba(4,4,10,.68)!important;
+  backdrop-filter:blur(7px);
+  -webkit-backdrop-filter:blur(7px);
+  pointer-events:auto!important;
+  visibility:visible!important;
+  opacity:1!important;
+}
+#hpOverlay.hp-overlay.hp-hidden{display:none!important;}
+#hpOverlay > #hpPanel.hp-panel{
+  position:relative!important;
+  inset:auto!important;
+  z-index:1!important;
+  width:min(760px,100vw)!important;
+  max-width:100vw!important;
+  height:100dvh!important;
+  max-height:100dvh!important;
+  display:flex!important;
+  flex-direction:column!important;
+  overflow:hidden!important;
+  pointer-events:auto!important;
+  visibility:visible!important;
+  opacity:1!important;
+}
+#hpFab.hp-fab{
+  position:fixed!important;
+  z-index:2147483645!important;
+  touch-action:none!important;
+  pointer-events:auto!important;
+}
+@media(max-width:600px){
+  #hpOverlay.hp-overlay{padding:4px!important;box-sizing:border-box!important;}
+  #hpOverlay > #hpPanel.hp-panel{
+    width:100%!important;
+    height:calc(100dvh - 8px)!important;
+    max-height:calc(100dvh - 8px)!important;
+    border-radius:18px!important;
+  }
+}
