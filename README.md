@@ -50,3 +50,9 @@ This build intentionally disables dragging of the floating button to eliminate A
 - Подтверждение перед завершением долгой цели.
 - В журнале завершённую цель можно вернуть обратно кнопкой «↩ Вернуть цель».
 - Исправлена отображаемая версия в шапке.
+
+
+## v0.8.1
+- 6 salient feelings on the Pulse screen.
+- Full 25-value palette remains stored locally, but the normal model prompt sends only the currently salient 1–6 values.
+- The full key vocabulary is still supplied to auto-tracking so the model may activate a different emotion when the scene changes.
