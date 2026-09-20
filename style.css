@@ -123,3 +123,45 @@
 .hp-npc>b{color:#ffd9ef;font-size:16px}
 .hp-npc>span{color:#eee}
 .hp-npc>small{display:block;color:#bfb2c6;line-height:1.35}
+
+
+/* v0.7.1 — compact mobile layout + clearer controls */
+.hp-head{padding:14px 16px 12px!important;gap:12px!important}
+.hp-kicker{font-size:10px!important;letter-spacing:.18em!important}
+.hp-head h2{font-size:25px!important;margin:4px 0 2px!important;line-height:1.08!important}
+.hp-head p{font-size:13px!important;line-height:1.28!important}
+.hp-close{width:42px!important;height:42px!important;border-radius:14px!important;font-size:24px!important;flex:0 0 auto}
+.hp-tabs{padding:7px 9px!important;gap:4px!important}
+.hp-tabs button{padding:8px 10px!important;font-size:13px!important;border-radius:12px!important}
+.hp-body{padding:12px!important}
+.hp-soft-card,.hp-hot-card,.hp-gold-card,.hp-model-card{padding:14px!important;border-radius:18px!important}
+.hp-soft-card h3,.hp-hot-card h3,.hp-gold-card h3,.hp-model-card h3{font-size:22px!important;line-height:1.08!important;margin:0 0 11px!important}
+.hp-subtitle{margin:13px 0 6px!important}
+.hp-input,.hp-text{padding:10px 11px!important;font-size:14px!important;border-radius:13px!important}
+.hp-text{min-height:78px!important;margin:7px 0!important}
+.hp-inner-text{min-height:72px!important}
+.hp-rel-grid{gap:9px!important;margin-top:11px!important}
+.hp-rel-grid label,.hp-row label{font-size:13px!important;gap:5px!important}
+.hp-extra-feelings{margin-top:11px!important;border-radius:13px!important}
+.hp-extra-feelings summary{padding:10px 11px!important;font-size:13px!important}
+.hp-extra-feelings .hp-rel-grid{padding:0 10px 10px!important}
+.hp-auto-status{margin:0 0 9px!important;padding:9px 10px!important;border-radius:12px!important;font-size:12px!important}
+.hp-shift{margin-top:11px!important;padding:10px!important;font-size:12px!important}
+.hp-actions button,.hp-inline button,.hp-intent button{padding:8px 10px!important;font-size:13px!important;border-radius:11px!important}
+.hp-switches{gap:6px!important;margin-bottom:8px!important}
+.hp-switches label{padding:7px 9px!important;font-size:12px!important;border-radius:10px!important}
+.hp-muted{font-size:12px!important;line-height:1.35!important}
+.hp-micro{font-size:11px!important;margin:6px 0 9px!important;opacity:.8}
+.hp-lock-toggle{display:inline-flex!important;align-items:center!important;gap:3px!important;cursor:pointer!important;font-size:13px!important}
+.hp-lock-toggle input{width:16px!important;height:16px!important;margin:0!important}
+.hp-inner-title{display:flex!important;justify-content:space-between!important;align-items:center!important;gap:8px!important}
+.hp-inner-field{margin-top:10px!important}
+#hpModelPreview{max-height:300px!important;padding:10px!important;font-size:11px!important;line-height:1.35!important;border-radius:12px!important}
+@media(max-width:600px){
+  .hp-head{padding:12px 13px 10px!important}
+  .hp-head h2{font-size:23px!important}
+  .hp-body{padding:9px!important}
+  .hp-soft-card,.hp-hot-card,.hp-gold-card,.hp-model-card{padding:12px!important;border-radius:16px!important}
+  .hp-soft-card h3,.hp-hot-card h3,.hp-gold-card h3,.hp-model-card h3{font-size:20px!important}
+  .hp-tabs button{padding:8px 9px!important;font-size:12.5px!important}
+}
