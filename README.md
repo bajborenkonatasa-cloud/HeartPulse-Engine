@@ -76,3 +76,8 @@ This build intentionally disables dragging of the floating button to eliminate A
 ## v0.9.3
 - Fixed bare HeartPulse JSON capture when other SillyTavern/extension UI content appears after the JSON.
 - The parser now removes only the detected HeartPulse JSON block and preserves content that follows it.
+
+
+## v0.9.4
+- Tolerant HeartPulse packet parser: accepts LLM JSON-like numeric deltas written with a leading `+` (for example `"jealousy": +18`).
+- Panel/version console label corrected to v0.9.4.
