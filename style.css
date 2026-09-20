@@ -235,3 +235,10 @@
 @media(max-width:600px){
   #hpModelPreview.hp-preview-box{min-height:130px;height:210px;font-size:10.5px;}
 }
+
+/* v0.8.0 dynamic emotional pulse */
+.hp-rel-active{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;margin-top:12px}
+.hp-feeling-note{margin:12px 0;padding:11px 13px;border:1px solid rgba(255,183,96,.24);border-radius:14px;background:rgba(255,183,96,.07);line-height:1.4}
+#hpAllFeelings{margin-top:12px}
+#hpAllFeelings summary{cursor:pointer}
+@media(max-width:520px){.hp-rel-active{grid-template-columns:1fr 1fr}.hp-feeling-note{font-size:13px}}

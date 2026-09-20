@@ -11,14 +11,21 @@ const JOURNAL_KEEP = 60;
 const NPC_KEEP = 40;
 
 const REL_FIELDS = [
-  ['trust', 'Доверие'], ['affection', 'Привязанность'], ['desire', 'Желание'],
-  ['tenderness', 'Нежность'], ['jealousy', 'Ревность'], ['resentment', 'Обида'],
-  ['irritation', 'Раздражение'], ['fear', 'Страх'], ['disappointment', 'Разочарование'],
-  ['admiration', 'Восхищение'], ['joy', 'Веселье'], ['tension', 'Напряжение'],
-  ['antipathy', 'Антипатия'], ['respect', 'Уважение']
+  ['trust', 'Доверие'], ['affection', 'Привязанность'], ['love', 'Любовь'],
+  ['sympathy', 'Симпатия'], ['friendship', 'Дружба'], ['respect', 'Уважение'],
+  ['desire', 'Желание'], ['passion', 'Страсть'], ['arousal', 'Озабоченность'],
+  ['obsession', 'Одержимость'], ['tenderness', 'Нежность'], ['admiration', 'Восхищение'],
+  ['jealousy', 'Ревность'], ['resentment', 'Обида'], ['irritation', 'Раздражение'],
+  ['anger', 'Злость'], ['fear', 'Страх'], ['sadness', 'Грусть'],
+  ['disappointment', 'Разочарование'], ['joy', 'Веселье'], ['fondness', 'Умиление'],
+  ['stress', 'Стресс'], ['tension', 'Напряжение'], ['antipathy', 'Антипатия'],
+  ['hate', 'Ненависть']
 ];
 
-const CORE_REL_KEYS = new Set(['trust','affection','desire','tension','jealousy','resentment']);
+const REL_LABEL = Object.fromEntries(REL_FIELDS);
+const REL_KEYS = REL_FIELDS.map(([k]) => k);
+const DEFAULT_VISIBLE_REL = ['love','trust','affection','tenderness','respect'];
+
 
 const KINK_LIBRARY = [
   ['dominance','Доминирование'], ['bondage','Бондаж'], ['praise','Похвала'], ['teasing','Дразнение'],
@@ -75,6 +82,8 @@ const defaults = () => ({
   recalibrationRequested: false,
   relation: Object.fromEntries(REL_FIELDS.map(([k]) => [k, 0])),
   relationLabel: 'Не определено',
+  activeFeelings: [],
+  feelingNote: '',
   lastShift: '',
   inner: { mood:'', motives:'', hiddenThought:'', currentGoal:'', futureDesire:'' },
   innerLocks: { mood:false, motives:false, hiddenThought:false, currentGoal:false, futureDesire:false },
@@ -113,7 +122,7 @@ function stateMerge(raw){
   s.relation=Object.assign({}, d.relation, raw?.relation||{});
   s.inner=Object.assign({}, d.inner, raw?.inner||{});
   s.innerLocks=Object.assign({}, d.innerLocks, raw?.innerLocks||{});
-  for(const key of ['kinks','activeKinks','customKinks','intentions','npc','journal']) if(!Array.isArray(s[key])) s[key]=[];
+  for(const key of ['kinks','activeKinks','customKinks','intentions','npc','journal','activeFeelings']) if(!Array.isArray(s[key])) s[key]=[];
   if(typeof s.calibrated!=='boolean') s.calibrated=false;
   if(typeof s.recalibrationRequested!=='boolean') s.recalibrationRequested=false;
   s.journalArchiveCount=Number(s.journalArchiveCount)||0;
@@ -231,13 +240,26 @@ function maybePrepareAutoSpark(){
   return `[AUTO SPARK — next reply only] Context may naturally activate ${KINK_LABEL[picked]||picked}. Intensity ${intensity}/100: prefer ${mode}. Keep it character-consistent and scene-appropriate; never force escalation just to satisfy the tag.`;
 }
 
+function visibleFeelingKeys(s){
+  const requested=(Array.isArray(s.activeFeelings)?s.activeFeelings:[]).filter(k=>REL_LABEL[k]);
+  const uniq=[...new Set(requested)].slice(0,5);
+  if(uniq.length) return uniq;
+  const ranked=REL_KEYS.map(k=>[k,clamp(s.relation[k],0,REL_MAX)]).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).map(([k])=>k);
+  return [...new Set([...ranked,...DEFAULT_VISIBLE_REL])].slice(0,5);
+}
+function allFeelingsCompact(s){
+  return REL_FIELDS.map(([k,l])=>`${l}:${clamp(s.relation[k],0,REL_MAX)}`).join(',');
+}
+
 function buildPrompt({includeAutoSpark=false}={}){
   const s=getState(); if(!s.enabled) return '';
   const name=currentCharName(); s.charName=name;
   const blocks=[`[HEARTPULSE private guidance for ${name}; never quote this block.]`,`Agency: write only ${name}, NPCs and world; never write {{user}}'s actions, dialogue, thoughts, feelings, decisions or consent.`];
   if(s.injectRelation){
-    const vals=REL_FIELDS.map(([k,l])=>`${l}:${clamp(s.relation[k],0,REL_MAX)}`).join(',');
-    blocks.push(`[REL 0-${REL_MAX}] ${s.relationLabel}; ${vals}. Values are independent intensities, continuity cues only.`);
+    const vals=allFeelingsCompact(s);
+    const active=visibleFeelingKeys(s).map(k=>`${REL_LABEL[k]}:${clamp(s.relation[k],0,REL_MAX)}`).join(',');
+    blocks.push(`[REL 0-${REL_MAX}] ${s.relationLabel}; full-state=${vals}. Active/salient now=${active}. Values are independent intensities, continuity cues only.`);
+    if(s.feelingNote) blocks.push(`[FEELING NOTE] ${s.feelingNote}`);
     const i=s.inner||{}, bits=[];
     if(i.mood) bits.push(`mood=${i.mood}`); if(i.motives) bits.push(`motives=${i.motives}`); if(i.hiddenThought) bits.push(`thought=${i.hiddenThought}`); if(i.currentGoal) bits.push(`goal=${i.currentGoal}`); if(i.futureDesire) bits.push(`future=${i.futureDesire}`);
     if(bits.length) blocks.push(`[INNER] ${bits.join(' | ')}`);
@@ -251,13 +273,14 @@ function buildPrompt({includeAutoSpark=false}={}){
   }
   if(s.manualDirective.trim()) blocks.push(`[CHAR/NPC DIRECTIVE — persistent] ${s.manualDirective.trim()}`);
   if(s.oneShotDirective.trim()) blocks.push(`[CHAR/NPC DIRECTIVE — next reply only] ${s.oneShotDirective.trim()}`);
+  blocks.push(`[VISIBLE OUTPUT RULE] Do not print any HeartPulse status panel, relationship percentages, motives/goals summary, or HEARTPULSE metadata in the visible roleplay reply. Keep those only in the hidden HEARTPULSE_STATE comment.`);
   if(s.autoTrack){
     const calibration = !s.calibrated
       ? `CALIBRATE now from the established chat context already available. Return absolute "levels" (0-${REL_MAX}) for all relation keys; do not assume zero just because HeartPulse is new.`
       : `Return only genuine "deltas" for changed relation keys (usually -5..+5, major event up to 15).`;
     blocks.push(`[HP UPDATE] End reply with exactly one HTML comment, nothing after it. ${calibration} Keep text fields compact. NPCs: include only active/relevant NPCs, but give each a small persistent profile.
-<!--HEARTPULSE_STATE:{"label":"...","shift":"...","levels":null,"deltas":{},"inner":{"mood":null,"motives":null,"hiddenThought":null,"currentGoal":null,"futureDesire":null},"intentions_add":[],"intentions_done":[],"npc":[{"name":"...","state":"...","mood":"...","motive":"...","goal":"...","relation":{"trust":0,"affection":0,"desire":0,"irritation":0,"fear":0,"respect":0}}]}-->
-Keys: ${REL_FIELDS.map(([k])=>k).join(',')}. Scale: 0-30 absent/very weak, 31-70 emerging, 71-110 established, 111-150 very strong, 151-180 extreme, 181-200 dominant. Independent feelings may coexist. Use null for unchanged inner fields. Durable plans only in intentions_add.`);
+<!--HEARTPULSE_STATE:{"label":"...","shift":"...","active":["love","tenderness"],"note":"1–2 short sentences explaining what is emotionally strongest right now","levels":null,"deltas":{},"inner":{"mood":null,"motives":null,"hiddenThought":null,"currentGoal":null,"futureDesire":null},"intentions_add":[],"intentions_done":[],"npc":[{"name":"...","state":"...","mood":"...","motive":"...","goal":"...","relation":{"trust":0,"affection":0,"desire":0,"irritation":0,"fear":0,"respect":0}}]}-->
+Keys: ${REL_FIELDS.map(([k])=>k).join(',')}. Scale: 0-30 absent/very weak, 31-70 emerging, 71-110 established, 111-150 very strong, 151-180 extreme, 181-200 dominant. Track the full emotional state internally, but "active" MUST contain only 1–5 feelings that are genuinely salient in THIS moment. Do not fill all feelings just because they exist. "note" is a compact explanation of the current emotional mix. Independent feelings may coexist. Use null for unchanged inner fields. Durable plans only in intentions_add.`);
   }
   return blocks.join('\n');
 }
@@ -289,6 +312,8 @@ function applyStatePacket(packet){
   const s=getState();
   if(packet.label) s.relationLabel=String(packet.label).slice(0,100);
   if(packet.shift) s.lastShift=String(packet.shift).slice(0,300);
+  if(Array.isArray(packet.active)) s.activeFeelings=[...new Set(packet.active.filter(k=>REL_LABEL[k]))].slice(0,5);
+  if(packet.note!==undefined && packet.note!==null) s.feelingNote=String(packet.note).trim().slice(0,360);
   if(packet.levels&&typeof packet.levels==='object'){
     for(const [k] of REL_FIELDS) if(k in packet.levels) s.relation[k]=clamp(packet.levels[k],0,REL_MAX);
     s.calibrated=true; s.calibrationAt=now(); s.recalibrationRequested=false;
@@ -327,10 +352,10 @@ function panelHtml(){
   const innerField=(key,label,placeholder)=>`<div class="hp-inner-field"><div class="hp-inner-title"><b>${label}</b><label class="hp-lock-toggle" title="Зафиксировать поле: модель перестанет менять его автоматически"><input type="checkbox" data-inner-lock="${key}" ${s.innerLocks?.[key]?'checked':''}><span>🔒</span></label></div><textarea class="hp-text hp-inner-text" data-inner="${key}" placeholder="${esc(placeholder)}">${esc(s.inner?.[key]||'')}</textarea></div>`;
   const scan=(s.lastCardScan||[]);
   return `<div id="hpOverlay" class="hp-overlay hp-hidden"><div id="hpPanel" class="hp-panel">
-    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.7.2</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
+    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.8.0</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
     <nav class="hp-tabs">${tabBtn('pulse','💗 Пульс')}${tabBtn('spark','❤️‍🔥 Искра')}${tabBtn('intent','🎯 Намерения')}${tabBtn('npc','👥 NPC')}${tabBtn('journal','📜 Журнал')}${tabBtn('model','👁 Модель')}</nav>
     <main class="hp-body">
-      ${page('pulse',`<div class="hp-soft-card"><h3>💞 Эмоциональная связь</h3><div class="hp-auto-status ${s.autoTrack?'on':''}">${s.autoTrack?'🤖 Авто-динамика: модель сама обновляет анкету после ответа. Шкала чувств 0–200.':'🖐️ Авто-динамика выключена: данные меняешь ты.'}</div><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: хрупкая забота"><div class="hp-actions"><button id="hpRecalibrate">${s.recalibrationRequested?'⏳ Переоценка — со следующим ответом':'🧭 Переоценить отношения'}</button></div><p class="hp-muted hp-micro">Переоценка не вызывает отдельный API-запрос: новые проценты придут после следующего обычного ответа модели.</p><div class="hp-rel-grid hp-rel-core">${REL_FIELDS.filter(([k])=>CORE_REL_KEYS.has(k)).map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div><details id="hpExtraFeelings" class="hp-extra-feelings" ${ui.extrasOpen?'open':''}><summary>✨ Дополнительные чувства (${REL_FIELDS.length-CORE_REL_KEYS.size})</summary><div class="hp-rel-grid">${REL_FIELDS.filter(([k])=>!CORE_REL_KEYS.has(k)).map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div></details>${s.lastShift?`<div class="hp-shift">✨ Последний сдвиг: ${esc(s.lastShift)}</div>`:''}<div class="hp-inner-mini"><h4>🧠 Что сейчас внутри</h4>${innerField('mood','Настроение','Например: спокойная решимость, тревога, азарт...')}${innerField('motives','Мотивы','Почему персонаж сейчас действует именно так...')}</div><p class="hp-muted hp-tip">Ничего заполнять не обязательно: при авто-динамике модель сама присылает состояние. Ты можешь поправить текст или поставить 🔒, чтобы модель его не меняла.</p></div>`)}
+      ${page('pulse',`<div class="hp-soft-card"><h3>💞 Эмоциональный пульс</h3><div class="hp-auto-status ${s.autoTrack?'on':''}">${s.autoTrack?'🤖 HeartPulse хранит полную палитру чувств, а здесь показывает только 1–5 самых актуальных сейчас.':'🖐️ Авто-динамика выключена: данные меняешь ты.'}</div><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: взаимное движение навстречу"><div class="hp-actions"><button id="hpRecalibrate">${s.recalibrationRequested?'⏳ Переоценка — со следующим ответом':'🧭 Переоценить отношения'}</button></div><p class="hp-muted hp-micro">Внутри движка остаются все чувства 0–200. На экран выводятся только те, которые сейчас реально важны.</p><div class="hp-rel-grid hp-rel-active">${visibleFeelingKeys(s).map(k=>`<label>${esc(REL_LABEL[k]||k)}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div>${s.feelingNote?`<div class="hp-feeling-note">💭 ${esc(s.feelingNote)}</div>`:''}${s.lastShift?`<div class="hp-shift">✨ Последний сдвиг: ${esc(s.lastShift)}</div>`:''}<details id="hpAllFeelings" class="hp-extra-feelings"><summary>🧠 Вся внутренняя палитра (${REL_FIELDS.length})</summary><p class="hp-muted hp-micro">Это скрытый движок. Обычно сюда заходить не нужно; можно раскрыть для ручной правки.</p><div class="hp-rel-grid">${REL_FIELDS.map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div></details><div class="hp-inner-mini"><h4>🧠 Что сейчас внутри</h4>${innerField('mood','Настроение','Например: спокойная решимость, тревога, азарт...')}${innerField('motives','Мотивы','Почему персонаж сейчас действует именно так...')}</div><p class="hp-muted hp-tip">Модель сама решает, какие чувства сейчас активны. Если обида, страсть, ревность, дружба или другое состояние действительно стали важны — оно появится в верхних 1–5 ползунках.</p></div>`)}
       ${page('spark',`<div class="hp-hot-card"><h3>❤️‍🔥 Искра / кинки</h3><div class="hp-row"><label>Интенсивность <b id="hpIntensityVal">${s.kinkIntensity}</b><input id="hpIntensity" type="range" min="0" max="100" value="${s.kinkIntensity}"></label><label>Шанс авто-искра <b id="hpChanceVal">${s.kinkChance}%</b><input id="hpChance" type="range" min="0" max="100" value="${s.kinkChance}"></label></div>
       <div class="hp-subtitle">Постоянные предпочтения персонажа</div><div class="hp-chip-grid">${KINK_LIBRARY.map(([k,l])=>`<button class="hp-chip ${prefSet.has(k)?'on':''}" data-kink="${k}">${l}</button>`).join('')}</div>
       <div class="hp-actions"><button id="hpScanCard">✨ Проверить карточку локально</button></div><p class="hp-muted">Без API и без отдельного запроса: HeartPulse читает текст карточки текущего персонажа и ищет известные признаки.</p>
