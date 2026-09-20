@@ -5,7 +5,10 @@ const MODULE = 'heartpulse_engine';
 const PROMPT_ID = 'heartpulse_engine_context';
 const META_KEY = 'heartpulse_engine_state_v2';
 const BACKUP_PREFIX = 'heartpulse_engine_backup_v2:';
-const UI_KEY = 'heartpulse_engine_ui_v4';
+const UI_KEY = 'heartpulse_engine_ui_v5';
+const REL_MAX = 200;
+const JOURNAL_KEEP = 60;
+const NPC_KEEP = 40;
 
 const REL_FIELDS = [
   ['trust', 'Доверие'], ['affection', 'Привязанность'], ['desire', 'Желание'],
@@ -67,6 +70,8 @@ const defaults = () => ({
   enabled: true,
   autoTrack: true,
   showToasts: true,
+  calibrated: false,
+  calibrationAt: 0,
   relation: Object.fromEntries(REL_FIELDS.map(([k]) => [k, 0])),
   relationLabel: 'Не определено',
   lastShift: '',
@@ -86,6 +91,7 @@ const defaults = () => ({
   intentions: [],
   npc: [],
   journal: [],
+  journalArchiveCount: 0,
   manualDirective: '',
   oneShotDirective: '',
   injectRelation: true,
@@ -97,7 +103,7 @@ const defaults = () => ({
 
 function ctx(){ try { return getContext?.() || globalThis.SillyTavern?.getContext?.() || {}; } catch(e){ console.warn('[HeartPulse] getContext failed', e); return {}; } }
 function esc(s=''){ return String(s).replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function clamp(n,min=-100,max=100){ n=Number(n)||0; return Math.max(min,Math.min(max,n)); }
+function clamp(n,min=0,max=REL_MAX){ n=Number(n)||0; return Math.max(min,Math.min(max,n)); }
 function now(){ return Date.now(); }
 function safeParse(s){ try{return JSON.parse(s);}catch{return null;} }
 function makeId(){ return crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`; }
@@ -107,7 +113,19 @@ function stateMerge(raw){
   s.inner=Object.assign({}, d.inner, raw?.inner||{});
   s.innerLocks=Object.assign({}, d.innerLocks, raw?.innerLocks||{});
   for(const key of ['kinks','activeKinks','customKinks','intentions','npc','journal']) if(!Array.isArray(s[key])) s[key]=[];
+  if(typeof s.calibrated!=='boolean') s.calibrated=false;
+  s.journalArchiveCount=Number(s.journalArchiveCount)||0;
   return s;
+}
+
+function compactHistory(s){
+  if(Array.isArray(s.journal) && s.journal.length>JOURNAL_KEEP){
+    s.journalArchiveCount += s.journal.length-JOURNAL_KEEP;
+    s.journal=s.journal.slice(0,JOURNAL_KEEP);
+  }
+  if(Array.isArray(s.npc) && s.npc.length>NPC_KEEP){
+    s.npc=[...s.npc].sort((a,b)=>(b.lastSeen||0)-(a.lastSeen||0)).slice(0,NPC_KEEP);
+  }
 }
 
 function currentChatKey(){
@@ -142,6 +160,7 @@ function getState(){
 async function saveState(){
   const c=ctx();
   const s=getState(); s.updatedAt=now();
+  compactHistory(s);
   writeBackup(s);
   if(c){
     try{ await c.saveMetadata?.(); }catch(e){ console.warn('[HeartPulse] metadata save failed; backup kept',e); }
@@ -193,55 +212,50 @@ function detectContextualKinks(prefKeys){
 function maybePrepareAutoSpark(){
   const s=getState();
   if(!s.autoSpark || !s.injectKinks || !s.enabled) return '';
-  if(s.sparkCooldownRemaining>0){ s.sparkCooldownRemaining--; return ''; }
-  const prefs=[...new Set(s.kinks)];
+  if(s.sparkCooldownRemaining>0){ s.sparkCooldownRemaining--; writeBackup(s); return ''; }
+  const prefs=[...new Set([...s.kinks,...s.customKinks])];
   if(!prefs.length) return '';
   const contextual=detectContextualKinks(prefs);
-  const pool=contextual.length ? contextual : (Number(s.relation.desire)>35 || Number(s.relation.tension)>45 ? prefs : []);
+  const emotionalReady=Number(s.relation.desire)>55 || Number(s.relation.tension)>70 || Number(s.relation.affection)>95;
+  const pool=contextual.length ? contextual : (emotionalReady ? prefs : []);
   if(!pool.length) return '';
-  const roll=Math.random()*100;
-  if(roll>clamp(s.kinkChance,0,100)) return '';
+  if(Math.random()*100 > clamp(s.kinkChance,0,100)) return '';
   const picked=pool[Math.floor(Math.random()*pool.length)];
   s.sparkCooldownRemaining=Math.max(1,Number(s.sparkCooldown)||4);
   s.lastSpark=KINK_LABEL[picked]||picked;
   s.updatedAt=now(); writeBackup(s);
-  return `[AUTO SPARK — next reply only] Current context plausibly activates: ${KINK_LABEL[picked]||picked}. Let it influence ${currentCharName()}'s initiative subtly and character-consistently. Do not force escalation; if the moment is not appropriate, keep it as tension, flirtation, a thought, or a small gesture instead.`;
+  const intensity=Number(s.kinkIntensity)||0;
+  const mode=intensity>=80?'bold initiative if the scene genuinely supports it':intensity>=60?'clear physical or verbal initiative':intensity>=35?'flirtation, touch, teasing or a spontaneous gesture':'subtext, thought, tension or a very small gesture';
+  return `[AUTO SPARK — next reply only] Context may naturally activate ${KINK_LABEL[picked]||picked}. Intensity ${intensity}/100: prefer ${mode}. Keep it character-consistent and scene-appropriate; never force escalation just to satisfy the tag.`;
 }
 
 function buildPrompt({includeAutoSpark=false}={}){
   const s=getState(); if(!s.enabled) return '';
   const name=currentCharName(); s.charName=name;
-  const blocks=[];
-  blocks.push(`[HEARTPULSE — private roleplay guidance for ${name}. Do not quote or expose this block.]`);
-  blocks.push(`Agency: control only ${name}, NPCs and the world. Never write {{user}}'s actions, dialogue, thoughts, feelings, decisions or consent.`);
+  const blocks=[`[HEARTPULSE private guidance for ${name}; never quote this block.]`,`Agency: write only ${name}, NPCs and world; never write {{user}}'s actions, dialogue, thoughts, feelings, decisions or consent.`];
   if(s.injectRelation){
-    const active=REL_FIELDS.map(([k,label])=>`${label} ${clamp(s.relation[k])}/100`).join(' · ');
-    blocks.push(`[RELATIONSHIP STATE] ${name}: ${s.relationLabel}. ${active}. Treat these values as continuity cues, not mandatory behavior. Let the current scene and character remain primary.`);
-    const i=s.inner||{};
-    const innerBits=[];
-    if(i.mood) innerBits.push(`Mood: ${i.mood}`);
-    if(i.motives) innerBits.push(`Motives: ${i.motives}`);
-    if(i.hiddenThought) innerBits.push(`Private thought: ${i.hiddenThought}`);
-    if(i.currentGoal) innerBits.push(`Current goal: ${i.currentGoal}`);
-    if(i.futureDesire) innerBits.push(`Future desire: ${i.futureDesire}`);
-    if(innerBits.length) blocks.push(`[CHARACTER INNER CONTINUITY] ${innerBits.join(' | ')}. Treat this as ${name}'s private continuity; do not quote it unless naturally revealed in-story.`);
+    const vals=REL_FIELDS.map(([k,l])=>`${l}:${clamp(s.relation[k],0,REL_MAX)}`).join(',');
+    blocks.push(`[REL 0-${REL_MAX}] ${s.relationLabel}; ${vals}. Values are independent intensities, continuity cues only.`);
+    const i=s.inner||{}, bits=[];
+    if(i.mood) bits.push(`mood=${i.mood}`); if(i.motives) bits.push(`motives=${i.motives}`); if(i.hiddenThought) bits.push(`thought=${i.hiddenThought}`); if(i.currentGoal) bits.push(`goal=${i.currentGoal}`); if(i.futureDesire) bits.push(`future=${i.futureDesire}`);
+    if(bits.length) blocks.push(`[INNER] ${bits.join(' | ')}`);
   }
-  if(s.injectIntentions && s.intentions.length){
-    blocks.push(`[OPEN INTENTIONS] ${s.intentions.map(x=>`${x.text}${x.priority?' ('+x.priority+')':''}`).join('; ')}. Keep these plans alive across replies and advance them naturally when a plausible opportunity appears.`);
-  }
+  if(s.injectIntentions && s.intentions.length) blocks.push(`[LONG GOALS] ${s.intentions.map(x=>x.text).join('; ')}. Keep alive until completed/abandoned; advance only when plausible.`);
   if(s.injectKinks){
-    const prefs=[...new Set([...s.kinks,...s.customKinks])];
-    const active=[...new Set(s.activeKinks)];
-    if(prefs.length) blocks.push(`[INTIMACY PROFILE — preference, not an order] Preferences: ${prefs.map(k=>KINK_LABEL[k]||k).join(', ')}. Intensity ${s.kinkIntensity}/100. Use only when contextually appropriate and consistent with the established relationship and scene.`);
-    if(active.length) blocks.push(`[ACTIVE SPARK — current scene] Prioritize subtly: ${active.map(k=>KINK_LABEL[k]||k).join(', ')}. Do not force unrelated escalation.`);
+    const prefs=[...new Set([...s.kinks,...s.customKinks])], active=[...new Set(s.activeKinks)];
+    if(prefs.length) blocks.push(`[SPARK PROFILE] ${prefs.map(k=>KINK_LABEL[k]||k).join(', ')}; intensity ${s.kinkIntensity}/100. Preferences, not obligations; use naturally.`);
+    if(active.length) blocks.push(`[ACTIVE SPARK] ${active.map(k=>KINK_LABEL[k]||k).join(', ')}.`);
     if(includeAutoSpark){ const auto=maybePrepareAutoSpark(); if(auto) blocks.push(auto); }
   }
-  if(s.manualDirective.trim()) blocks.push(`[MANUAL DIRECTIVE] ${s.manualDirective.trim()}`);
-  if(s.oneShotDirective.trim()) blocks.push(`[NEXT RESPONSE ONLY] ${s.oneShotDirective.trim()}`);
+  if(s.manualDirective.trim()) blocks.push(`[CHAR/NPC DIRECTIVE — persistent] ${s.manualDirective.trim()}`);
+  if(s.oneShotDirective.trim()) blocks.push(`[CHAR/NPC DIRECTIVE — next reply only] ${s.oneShotDirective.trim()}`);
   if(s.autoTrack){
-    blocks.push(`[HEARTPULSE STATE UPDATE — hidden bookkeeping] At the very end of your reply append exactly one HTML comment and nothing after it. This is your own honest internal read of ${name}, based on the reply you just wrote and established context. Do NOT ask the user to fill it. Keep it compact. Update only what genuinely changed; use null for unchanged inner fields. Format:
-<!--HEARTPULSE_STATE:{"label":"short relationship state","shift":"one short sentence","deltas":{"trust":2,"tension":-1},"inner":{"mood":"...","motives":"...","hiddenThought":"...","currentGoal":"...","futureDesire":"..."},"intentions_add":[],"intentions_done":[],"npc":[]}-->
-Allowed delta keys: ${REL_FIELDS.map(([k])=>k).join(', ')}. Typical delta is -5..+5; larger only for a major event. Inner fields: mood = current emotional tone; motives = why ${name} acts this way now; hiddenThought = a private thought not necessarily spoken; currentGoal = immediate aim; futureDesire = longer-term wish. Keep each under ~140 characters. Respect locked/manual values already provided in context. intentions_add contains durable concrete plans worth remembering across many replies; intentions_done contains exact durable plan texts completed or abandoned. NPC entries are short objects like {"name":"...","state":"..."}. This comment is metadata, not prose.`);
+    const calibration = !s.calibrated
+      ? `CALIBRATE now from the established chat context already available. Return absolute "levels" (0-${REL_MAX}) for all relation keys; do not assume zero just because HeartPulse is new.`
+      : `Return only genuine "deltas" for changed relation keys (usually -5..+5, major event up to 15).`;
+    blocks.push(`[HP UPDATE] End reply with exactly one HTML comment, nothing after it. ${calibration} Keep text fields compact. NPCs: include only active/relevant NPCs, but give each a small persistent profile.
+<!--HEARTPULSE_STATE:{"label":"...","shift":"...","levels":null,"deltas":{},"inner":{"mood":null,"motives":null,"hiddenThought":null,"currentGoal":null,"futureDesire":null},"intentions_add":[],"intentions_done":[],"npc":[{"name":"...","state":"...","mood":"...","motive":"...","goal":"...","relation":{"trust":0,"affection":0,"desire":0,"irritation":0,"fear":0,"respect":0}}]}-->
+Keys: ${REL_FIELDS.map(([k])=>k).join(',')}. Scale: 0-30 absent/very weak, 31-70 emerging, 71-110 established, 111-150 very strong, 151-180 extreme, 181-200 dominant. Independent feelings may coexist. Use null for unchanged inner fields. Durable plans only in intentions_add.`);
   }
   return blocks.join('\n');
 }
@@ -257,25 +271,43 @@ async function refreshPrompt(opts={}){
 }
 function toast(msg,type='info'){ if(getState().showToasts && window.toastr?.[type]) window.toastr[type](msg,'HeartPulse ❤️‍🔥✨'); }
 
+function normalizeNpc(n,old={}){
+  const relKeys=['trust','affection','desire','irritation','fear','respect'];
+  const relation=Object.assign({},old.relation||{});
+  if(n?.relation&&typeof n.relation==='object') for(const k of relKeys) if(k in n.relation) relation[k]=clamp(n.relation[k],0,REL_MAX);
+  return {name:String(n?.name||old.name||'NPC').slice(0,80),state:String(n?.state||n?.note||old.state||'').slice(0,240),mood:String(n?.mood||old.mood||'').slice(0,180),motive:String(n?.motive||old.motive||'').slice(0,220),goal:String(n?.goal||old.goal||'').slice(0,220),relation,lastSeen:now()};
+}
+function mergeNpcList(s,incoming){
+  if(!Array.isArray(incoming)) return;
+  const map=new Map((s.npc||[]).map(n=>[String(n.name||'').toLowerCase(),n]));
+  for(const n of incoming){ const key=String(n?.name||'').trim().toLowerCase(); if(!key) continue; map.set(key,normalizeNpc(n,map.get(key))); }
+  s.npc=[...map.values()].sort((a,b)=>(b.lastSeen||0)-(a.lastSeen||0));
+}
 function applyStatePacket(packet){
   const s=getState();
   if(packet.label) s.relationLabel=String(packet.label).slice(0,100);
   if(packet.shift) s.lastShift=String(packet.shift).slice(0,300);
-  if(packet.deltas&&typeof packet.deltas==='object') for(const [k] of REL_FIELDS) if(k in packet.deltas) s.relation[k]=clamp((s.relation[k]||0)+clamp(packet.deltas[k],-15,15));
+  if(packet.levels&&typeof packet.levels==='object'){
+    for(const [k] of REL_FIELDS) if(k in packet.levels) s.relation[k]=clamp(packet.levels[k],0,REL_MAX);
+    s.calibrated=true; s.calibrationAt=now();
+  } else if(packet.deltas&&typeof packet.deltas==='object'){
+    for(const [k] of REL_FIELDS) if(k in packet.deltas) s.relation[k]=clamp((s.relation[k]||0)+clamp(packet.deltas[k],-15,15),0,REL_MAX);
+    if(Object.keys(packet.deltas).length) s.calibrated=true;
+  }
   if(packet.inner&&typeof packet.inner==='object'){
-    const allowed=['mood','motives','hiddenThought','currentGoal','futureDesire'];
-    for(const k of allowed){
-      if(s.innerLocks?.[k]) continue;
-      const v=packet.inner[k];
+    for(const k of ['mood','motives','hiddenThought','currentGoal','futureDesire']){
+      if(s.innerLocks?.[k]) continue; const v=packet.inner[k];
       if(v!==null && v!==undefined && String(v).trim()) s.inner[k]=String(v).trim().slice(0,500);
     }
   }
   for(const text of (packet.intentions_add||[])){ const t=String(text).trim(); if(t&&!s.intentions.some(x=>x.text===t)) s.intentions.push({id:makeId(),text:t,priority:'обычно'}); }
   const done=new Set((packet.intentions_done||[]).map(x=>String(x).trim().toLowerCase()));
   if(done.size) s.intentions=s.intentions.filter(x=>!done.has(x.text.toLowerCase()));
-  if(Array.isArray(packet.npc)) s.npc=packet.npc.slice(0,12);
-  s.journal.unshift({ts:now(),type:'shift',text:s.lastShift||'Эмоциональное состояние обновлено'}); s.journal=s.journal.slice(0,80);
+  mergeNpcList(s,packet.npc);
+  s.journal.unshift({ts:now(),type:'shift',text:s.lastShift||'Эмоциональное состояние обновлено'});
+  compactHistory(s);
 }
+
 async function parseLatestModelState(){
   const c=ctx(); if(!c) return;
   const last=[...c.chat].reverse().find(m=>m&&!m.is_user&&typeof m.mes==='string'); if(!last) return;
@@ -293,21 +325,21 @@ function panelHtml(){
   const innerField=(key,label,placeholder)=>`<div class="hp-inner-field"><div class="hp-inner-title"><b>${label}</b><label title="Не менять автоматически"><input type="checkbox" data-inner-lock="${key}" ${s.innerLocks?.[key]?'checked':''}> 🔒</label></div><textarea class="hp-text hp-inner-text" data-inner="${key}" placeholder="${esc(placeholder)}">${esc(s.inner?.[key]||'')}</textarea></div>`;
   const scan=(s.lastCardScan||[]);
   return `<div id="hpOverlay" class="hp-overlay hp-hidden"><div id="hpPanel" class="hp-panel">
-    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.6.0</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
+    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.7.0</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
     <nav class="hp-tabs">${tabBtn('pulse','💗 Пульс')}${tabBtn('spark','❤️‍🔥 Искра')}${tabBtn('intent','🎯 Намерения')}${tabBtn('npc','👥 NPC')}${tabBtn('journal','📜 Журнал')}${tabBtn('model','👁 Модель')}</nav>
     <main class="hp-body">
-      ${page('pulse',`<div class="hp-soft-card"><h3>💞 Эмоциональная связь</h3><div class="hp-auto-status ${s.autoTrack?'on':''}">${s.autoTrack?'🤖 Авто-динамика: модель сама обновляет анкету после своего обычного ответа.':'🖐️ Авто-динамика выключена: данные меняешь ты.'}</div><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: хрупкая забота"><div class="hp-rel-grid hp-rel-core">${REL_FIELDS.filter(([k])=>CORE_REL_KEYS.has(k)).map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k])}</b><input class="hp-range" data-rel="${k}" type="range" min="-100" max="100" value="${clamp(s.relation[k])}"></label>`).join('')}</div><details id="hpExtraFeelings" class="hp-extra-feelings" ${ui.extrasOpen?'open':''}><summary>✨ Дополнительные чувства (${REL_FIELDS.length-CORE_REL_KEYS.size})</summary><div class="hp-rel-grid">${REL_FIELDS.filter(([k])=>!CORE_REL_KEYS.has(k)).map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k])}</b><input class="hp-range" data-rel="${k}" type="range" min="-100" max="100" value="${clamp(s.relation[k])}"></label>`).join('')}</div></details>${s.lastShift?`<div class="hp-shift">✨ Последний сдвиг: ${esc(s.lastShift)}</div>`:''}<div class="hp-inner-mini"><h4>🧠 Что сейчас внутри</h4>${innerField('mood','Настроение','Например: спокойная решимость, тревога, азарт...')}${innerField('motives','Мотивы','Почему персонаж сейчас действует именно так...')}</div><p class="hp-muted hp-tip">Ничего заполнять не обязательно: при авто-динамике модель сама присылает состояние. Ты можешь поправить текст или поставить 🔒, чтобы модель его не меняла.</p></div>`)}
+      ${page('pulse',`<div class="hp-soft-card"><h3>💞 Эмоциональная связь</h3><div class="hp-auto-status ${s.autoTrack?'on':''}">${s.autoTrack?'🤖 Авто-динамика: модель сама обновляет анкету после ответа. Шкала чувств 0–200.':'🖐️ Авто-динамика выключена: данные меняешь ты.'}</div><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: хрупкая забота"><div class="hp-actions"><button id="hpRecalibrate">🧭 Переоценить отношения по текущему чату</button></div><div class="hp-rel-grid hp-rel-core">${REL_FIELDS.filter(([k])=>CORE_REL_KEYS.has(k)).map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div><details id="hpExtraFeelings" class="hp-extra-feelings" ${ui.extrasOpen?'open':''}><summary>✨ Дополнительные чувства (${REL_FIELDS.length-CORE_REL_KEYS.size})</summary><div class="hp-rel-grid">${REL_FIELDS.filter(([k])=>!CORE_REL_KEYS.has(k)).map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div></details>${s.lastShift?`<div class="hp-shift">✨ Последний сдвиг: ${esc(s.lastShift)}</div>`:''}<div class="hp-inner-mini"><h4>🧠 Что сейчас внутри</h4>${innerField('mood','Настроение','Например: спокойная решимость, тревога, азарт...')}${innerField('motives','Мотивы','Почему персонаж сейчас действует именно так...')}</div><p class="hp-muted hp-tip">Ничего заполнять не обязательно: при авто-динамике модель сама присылает состояние. Ты можешь поправить текст или поставить 🔒, чтобы модель его не меняла.</p></div>`)}
       ${page('spark',`<div class="hp-hot-card"><h3>❤️‍🔥 Искра / кинки</h3><div class="hp-row"><label>Интенсивность <b id="hpIntensityVal">${s.kinkIntensity}</b><input id="hpIntensity" type="range" min="0" max="100" value="${s.kinkIntensity}"></label><label>Шанс авто-искра <b id="hpChanceVal">${s.kinkChance}%</b><input id="hpChance" type="range" min="0" max="100" value="${s.kinkChance}"></label></div>
       <div class="hp-subtitle">Постоянные предпочтения персонажа</div><div class="hp-chip-grid">${KINK_LIBRARY.map(([k,l])=>`<button class="hp-chip ${prefSet.has(k)?'on':''}" data-kink="${k}">${l}</button>`).join('')}</div>
       <div class="hp-actions"><button id="hpScanCard">✨ Проверить карточку локально</button></div><p class="hp-muted">Без API и без отдельного запроса: HeartPulse читает текст карточки текущего персонажа и ищет известные признаки.</p>
       <div class="hp-scan-report"><b>🩺 Анамнез карточки</b>${s.lastCardScanAt?`<span class="hp-muted">Последняя проверка: ${new Date(s.lastCardScanAt).toLocaleTimeString()}</span>`:''}${scan.length?`<div class="hp-scan-chips">${scan.map(k=>`<span>${esc(KINK_LABEL[k]||k)}</span>`).join('')}</div>`:'<p class="hp-muted">Ещё не проверено или явных совпадений не найдено.</p>'}</div>
       <div class="hp-subtitle">Активно именно в этой сцене</div><div class="hp-chip-grid hp-active-grid">${KINK_LIBRARY.map(([k,l])=>`<button class="hp-chip scene ${activeSet.has(k)?'on':''}" data-active-kink="${k}">${l}</button>`).join('')}</div>
       <textarea id="hpCustomKinks" class="hp-text" placeholder="Свои предпочтения — по одному с новой строки">${esc(s.customKinks.join('\n'))}</textarea>
-      <div class="hp-auto-box"><label><input id="hpAutoSpark" type="checkbox" ${s.autoSpark?'checked':''}> 🎲 Авто-искра без отдельного API-запроса</label><label>Пауза после срабатывания: <input id="hpCooldown" class="hp-mini-input" type="number" min="1" max="12" value="${s.sparkCooldown}"> ответов</label><div class="hp-muted">${s.lastSpark?`Последняя авто-искра: ${esc(s.lastSpark)} · осталось паузы ${s.sparkCooldownRemaining}`:'Авто-искра ещё не срабатывала.'}</div></div></div>`)}
+      <div class="hp-auto-box"><label><input id="hpAutoSpark" type="checkbox" ${s.autoSpark?'checked':''}> 🎲 Авто-искра без отдельного API-запроса</label><label>Пауза после срабатывания: <input id="hpCooldown" class="hp-mini-input" type="number" min="1" max="12" value="${s.sparkCooldown}"> ответов</label><div class="hp-muted">${s.lastSpark?`Последняя авто-искра: ${esc(s.lastSpark)} · отдых ещё ${s.sparkCooldownRemaining} ответ(а/ов). После паузы искра снова может сработать, но не обязана.`:'Авто-искра ещё не срабатывала.'}</div></div></div>`)}
       ${page('intent',`<div class="hp-gold-card"><h3>🎯 Внутренние намерения</h3><p class="hp-muted">Эти поля может заполнять сама модель после ответа. Ручная правка всегда разрешена; 🔒 фиксирует поле.</p>${innerField('hiddenThought','Скрытая мысль','Что персонаж думает, но не говорит...')}${innerField('currentGoal','Цель сейчас','Чего он хочет добиться прямо сейчас...')}${innerField('futureDesire','Желание на будущее','К чему он хочет прийти позже...')}<div class="hp-subtitle">📌 Долгие цели, которые нельзя забыть</div><div id="hpIntentList">${s.intentions.map(x=>`<div class="hp-intent" data-id="${esc(x.id)}"><span>${esc(x.text)}</span><button data-done="${esc(x.id)}">✓</button><button data-del="${esc(x.id)}">🗑</button></div>`).join('')||'<p class="hp-muted">Пока пусто. Модель может добавить такую цель сама, либо ты добавишь вручную.</p>'}</div><div class="hp-inline"><input id="hpIntentInput" class="hp-input" placeholder="Например: подарить кольцо в подходящий момент"><button id="hpIntentAdd">＋</button></div></div>`)}
-      ${page('npc',`<div class="hp-soft-card"><h3>👥 NPC</h3><p class="hp-muted">NPC из последнего структурного обновления модели.</p><div>${(s.npc||[]).map(n=>`<div class="hp-npc"><b>${esc(n.name||'NPC')}</b><span>${esc(n.state||n.note||'')}</span></div>`).join('')||'<p class="hp-muted">Нет активных NPC.</p>'}</div></div>`)}
-      ${page('journal',`<div class="hp-soft-card"><h3>📜 Журнал сдвигов</h3>${s.journal.map(j=>`<div class="hp-log"><time>${new Date(j.ts).toLocaleString()}</time><span>${esc(j.text)}</span></div>`).join('')||'<p class="hp-muted">Журнал пока пуст.</p>'}</div>`)}
-      ${page('model',`<div class="hp-model-card"><h3>👁 Что увидит модель</h3><div class="hp-switches"><label><input id="hpEnabled" type="checkbox" ${s.enabled?'checked':''}> включить расширение</label><label><input id="hpAutoTrack" type="checkbox" ${s.autoTrack?'checked':''}> авто-анкета</label><label><input id="hpInjectRel" type="checkbox" ${s.injectRelation?'checked':''}> отношения / внутреннее состояние</label><label><input id="hpInjectKinks" type="checkbox" ${s.injectKinks?'checked':''}> искра</label><label><input id="hpInjectIntent" type="checkbox" ${s.injectIntentions?'checked':''}> долгие цели</label><label><input id="hpShowFab" type="checkbox" ${ui.showFab?'checked':''}> плавающая кнопка</label></div><textarea id="hpManual" class="hp-text" placeholder="Постоянное ручное указание">${esc(s.manualDirective)}</textarea><textarea id="hpOneShot" class="hp-text" placeholder="Только следующий ответ">${esc(s.oneShotDirective)}</textarea><pre id="hpModelPreview"></pre></div>`)}
+      ${page('npc',`<div class="hp-soft-card"><h3>👥 NPC</h3><p class="hp-muted">Мини-анкеты NPC сохраняются между сценами. Последние/активные обновляются моделью, старые не стираются сразу.</p><div>${(s.npc||[]).map(n=>`<div class="hp-npc"><b>${esc(n.name||'NPC')}</b><span>${esc(n.state||'')}</span>${n.mood?`<small>🎭 ${esc(n.mood)}</small>`:''}${n.motive?`<small>🧠 ${esc(n.motive)}</small>`:''}${n.goal?`<small>🎯 ${esc(n.goal)}</small>`:''}${n.relation?`<small>💞 ${Object.entries(n.relation).map(([k,v])=>`${esc(k)} ${clamp(v,0,REL_MAX)}`).join(' · ')}</small>`:''}</div>`).join('')||'<p class="hp-muted">Нет сохранённых NPC.</p>'}</div></div>`)}
+      ${page('journal',`<div class="hp-soft-card"><h3>📜 Журнал сдвигов</h3>${s.journalArchiveCount?`<p class="hp-muted">🗃️ Старых записей автоматически свёрнуто: ${s.journalArchiveCount}. Текущее состояние, цели и NPC сохранены отдельно.</p>`:''}${s.journal.map(j=>`<div class="hp-log"><time>${new Date(j.ts).toLocaleString()}</time><span>${esc(j.text)}</span></div>`).join('')||'<p class="hp-muted">Журнал пока пуст.</p>'}</div>`)}
+      ${page('model',`<div class="hp-model-card"><h3>👁 Что увидит модель</h3><p class="hp-muted">💾 Данные могут храниться в HeartPulse, даже если соответствующая галочка отправки модели выключена. ${s.calibrated?`✅ Отношения откалиброваны по этому чату.`:`🧭 Нужна первичная калибровка отношений по истории чата.`}</p><div class="hp-switches"><label><input id="hpEnabled" type="checkbox" ${s.enabled?'checked':''}> включить расширение</label><label><input id="hpAutoTrack" type="checkbox" ${s.autoTrack?'checked':''}> авто-анкета</label><label><input id="hpInjectRel" type="checkbox" ${s.injectRelation?'checked':''}> отношения / внутреннее состояние</label><label><input id="hpInjectKinks" type="checkbox" ${s.injectKinks?'checked':''}> искра</label><label><input id="hpInjectIntent" type="checkbox" ${s.injectIntentions?'checked':''}> долгие цели</label><label><input id="hpShowFab" type="checkbox" ${ui.showFab?'checked':''}> плавающая кнопка</label></div><textarea id="hpManual" class="hp-text" placeholder="🎭 Указание {{char}} / NPC — постоянно">${esc(s.manualDirective)}</textarea><textarea id="hpOneShot" class="hp-text" placeholder="⚡ Указание {{char}} / NPC — только следующий ответ">${esc(s.oneShotDirective)}</textarea><pre id="hpModelPreview"></pre></div>`)}
     </main></div></div>`;
 }
 function renderModelPreview(){ const el=document.querySelector('#hpModelPreview'); if(el) el.textContent=buildPrompt({includeAutoSpark:false})||'Ничего не отправляется.'; }
@@ -389,6 +421,7 @@ function bind(){
   document.querySelectorAll('[data-rel]').forEach(r=>r.addEventListener('input',()=>{ const s=getState(); s.relation[r.dataset.rel]=Number(r.value); document.querySelector(`[data-val="${r.dataset.rel}"]`).textContent=r.value; writeBackup(s); }));
   document.querySelectorAll('[data-rel]').forEach(r=>r.addEventListener('change',saveState));
   q('#hpRelationLabel')?.addEventListener('change',async e=>{getState().relationLabel=e.target.value; await saveState();});
+  q('#hpRecalibrate')?.addEventListener('click',async()=>{const s=getState();s.calibrated=false;s.calibrationAt=0;await saveState();toast('На следующем ответе модель заново откалибрует отношения по доступной истории чата','info');render();});
   document.querySelectorAll('[data-kink]').forEach(b=>b.addEventListener('click',async()=>{ const s=getState(),k=b.dataset.kink; s.kinks=s.kinks.includes(k)?s.kinks.filter(x=>x!==k):[...s.kinks,k]; b.classList.toggle('on'); await saveState(); }));
   document.querySelectorAll('[data-active-kink]').forEach(b=>b.addEventListener('click',async()=>{ const s=getState(),k=b.dataset.activeKink; s.activeKinks=s.activeKinks.includes(k)?s.activeKinks.filter(x=>x!==k):[...s.activeKinks,k]; b.classList.toggle('on'); await saveState(); }));
   q('#hpIntensity')?.addEventListener('input',e=>{getState().kinkIntensity=Number(e.target.value); const v=q('#hpIntensityVal'); if(v)v.textContent=e.target.value; writeBackup(getState());});
@@ -565,7 +598,7 @@ function init(){
   safeOn(event_types.MESSAGE_RECEIVED,()=>setTimeout(parseLatestModelState,80));
   safeOn(event_types.GENERATION_ENDED,async()=>{const s=getState();if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();}await refreshPrompt({includeAutoSpark:false});});
   setInterval(()=>{ ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); syncSettingsEntry(); },1800);
-  console.log('[HeartPulse] v0.6.0 ready');
+  console.log('[HeartPulse] v0.7.0 ready');
   return true;
 }
 

@@ -34,3 +34,12 @@ This build intentionally disables dragging of the floating button to eliminate A
 - Вкладка/страница больше не сбрасывается при изменении ползунков Искры.
 - «Проверить карточку» теперь выполняет локальный словарный анализ карточки, показывает найденный «анамнез» и добавляет распознанные предпочтения без отдельного API-запроса.
 - Улучшено чтение полей карточки персонажа, включая вложенные текстовые поля.
+
+## v0.7.0
+- Relationship scale is now 0–200.
+- Existing chats can calibrate from their already-established context instead of starting at zero.
+- Added manual re-calibration button.
+- NPC profiles are persistent and richer (mood, motive, goal and compact relationship values).
+- Auto Spark now uses intensity as a behavior-strength hint while chance controls whether it fires after cooldown.
+- Journal is bounded: recent shifts stay visible; old low-level entries are compacted while current state, goals and NPC profiles remain stored.
+- Manual directives are explicitly scoped to {{char}} / NPC and can be persistent or next-response-only.

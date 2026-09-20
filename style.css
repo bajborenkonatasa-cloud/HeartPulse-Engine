@@ -118,3 +118,8 @@
 .hp-scan-chips{display:flex;flex-wrap:wrap;gap:7px}
 .hp-scan-chips span{padding:7px 10px;border-radius:999px;border:1px solid rgba(255,137,91,.28);background:rgba(255,105,65,.09);font-size:13px;color:#ffe5dc}
 #hpIntensity,#hpChance,.hp-range{touch-action:pan-y!important}
+/* v0.7.0 richer NPC cards */
+.hp-npc{display:grid!important;grid-template-columns:1fr;gap:5px!important;justify-content:stretch!important}
+.hp-npc>b{color:#ffd9ef;font-size:16px}
+.hp-npc>span{color:#eee}
+.hp-npc>small{display:block;color:#bfb2c6;line-height:1.35}
