@@ -5,7 +5,7 @@ const MODULE = 'heartpulse_engine';
 const PROMPT_ID = 'heartpulse_engine_context';
 const META_KEY = 'heartpulse_engine_state_v2';
 const BACKUP_PREFIX = 'heartpulse_engine_backup_v2:';
-const UI_KEY = 'heartpulse_engine_ui_v3';
+const UI_KEY = 'heartpulse_engine_ui_v4';
 
 const REL_FIELDS = [
   ['trust', 'Доверие'], ['affection', 'Привязанность'], ['desire', 'Желание'],
@@ -70,6 +70,10 @@ const defaults = () => ({
   relation: Object.fromEntries(REL_FIELDS.map(([k]) => [k, 0])),
   relationLabel: 'Не определено',
   lastShift: '',
+  inner: { mood:'', motives:'', hiddenThought:'', currentGoal:'', futureDesire:'' },
+  innerLocks: { mood:false, motives:false, hiddenThought:false, currentGoal:false, futureDesire:false },
+  lastCardScan: [],
+  lastCardScanAt: 0,
   kinks: [],                // постоянные предпочтения персонажа
   activeKinks: [],          // активны именно сейчас
   customKinks: [],
@@ -100,6 +104,8 @@ function makeId(){ return crypto.randomUUID?.() || `${Date.now()}-${Math.random(
 function stateMerge(raw){
   const d=defaults(), s=Object.assign(d, raw||{});
   s.relation=Object.assign({}, d.relation, raw?.relation||{});
+  s.inner=Object.assign({}, d.inner, raw?.inner||{});
+  s.innerLocks=Object.assign({}, d.innerLocks, raw?.innerLocks||{});
   for(const key of ['kinks','activeKinks','customKinks','intentions','npc','journal']) if(!Array.isArray(s[key])) s[key]=[];
   return s;
 }
@@ -113,7 +119,7 @@ function currentChatKey(){
 function backupKey(){ return BACKUP_PREFIX + currentChatKey(); }
 function readBackup(){ return safeParse(localStorage.getItem(backupKey())||''); }
 function writeBackup(state){ try{ localStorage.setItem(backupKey(), JSON.stringify(state)); }catch(e){ console.warn('[HeartPulse] backup failed',e); } }
-function readUi(){ return Object.assign({showFab:true,x:null,y:112,extrasOpen:false}, safeParse(localStorage.getItem(UI_KEY)||'')||{}); }
+function readUi(){ return Object.assign({showFab:true,x:null,y:112,extrasOpen:false,activeTab:'pulse'}, safeParse(localStorage.getItem(UI_KEY)||'')||{}); }
 function saveUi(ui){ try{ localStorage.setItem(UI_KEY,JSON.stringify(ui)); }catch{} }
 
 function getState(){
@@ -152,8 +158,23 @@ function currentCharName(){
 function currentCharCardText(){
   const c=ctx(); if(!c || c.groupId) return '';
   const ch=c.characters?.[c.characterId]; if(!ch) return '';
-  const d=ch.data||{};
-  return [ch.description,d.description,ch.personality,d.personality,ch.scenario,d.scenario,ch.mes_example,d.mes_example,d.creator_notes].filter(Boolean).join('\n').toLowerCase();
+  const chunks=[];
+  const seen=new WeakSet();
+  const skipKey=/^(avatar|image|thumbnail|chat|date_last_chat|create_date)$/i;
+  const walk=(value,key='',depth=0)=>{
+    if(depth>5 || value==null || skipKey.test(key)) return;
+    if(typeof value==='string'){
+      const t=value.trim();
+      if(t && t.length<50000) chunks.push(t);
+      return;
+    }
+    if(typeof value!=='object') return;
+    if(seen.has(value)) return; seen.add(value);
+    if(Array.isArray(value)){ for(const v of value.slice(0,120)) walk(v,key,depth+1); return; }
+    for(const [k,v] of Object.entries(value)) walk(v,k,depth+1);
+  };
+  walk(ch,'character',0);
+  return chunks.join('\n').toLowerCase();
 }
 function scanCardKinks(){
   const text=currentCharCardText(); if(!text) return [];
@@ -196,6 +217,14 @@ function buildPrompt({includeAutoSpark=false}={}){
   if(s.injectRelation){
     const active=REL_FIELDS.map(([k,label])=>`${label} ${clamp(s.relation[k])}/100`).join(' · ');
     blocks.push(`[RELATIONSHIP STATE] ${name}: ${s.relationLabel}. ${active}. Treat these values as continuity cues, not mandatory behavior. Let the current scene and character remain primary.`);
+    const i=s.inner||{};
+    const innerBits=[];
+    if(i.mood) innerBits.push(`Mood: ${i.mood}`);
+    if(i.motives) innerBits.push(`Motives: ${i.motives}`);
+    if(i.hiddenThought) innerBits.push(`Private thought: ${i.hiddenThought}`);
+    if(i.currentGoal) innerBits.push(`Current goal: ${i.currentGoal}`);
+    if(i.futureDesire) innerBits.push(`Future desire: ${i.futureDesire}`);
+    if(innerBits.length) blocks.push(`[CHARACTER INNER CONTINUITY] ${innerBits.join(' | ')}. Treat this as ${name}'s private continuity; do not quote it unless naturally revealed in-story.`);
   }
   if(s.injectIntentions && s.intentions.length){
     blocks.push(`[OPEN INTENTIONS] ${s.intentions.map(x=>`${x.text}${x.priority?' ('+x.priority+')':''}`).join('; ')}. Keep these plans alive across replies and advance them naturally when a plausible opportunity appears.`);
@@ -210,9 +239,9 @@ function buildPrompt({includeAutoSpark=false}={}){
   if(s.manualDirective.trim()) blocks.push(`[MANUAL DIRECTIVE] ${s.manualDirective.trim()}`);
   if(s.oneShotDirective.trim()) blocks.push(`[NEXT RESPONSE ONLY] ${s.oneShotDirective.trim()}`);
   if(s.autoTrack){
-    blocks.push(`[HEARTPULSE STATE UPDATE — hidden bookkeeping] At the very end of your reply append exactly one HTML comment and nothing after it. Update only what genuinely changed in THIS reply; omit unchanged emotion keys to keep it short. Format:
-<!--HEARTPULSE_STATE:{"label":"short relationship state","shift":"one short sentence","deltas":{"trust":2,"tension":-1},"intentions_add":[],"intentions_done":[],"npc":[]}-->
-Allowed delta keys: ${REL_FIELDS.map(([k])=>k).join(', ')}. Typical delta is -5..+5; use larger only for a major event. intentions_add contains durable plans ${name} should remember and pursue later; intentions_done contains exact plan texts completed or abandoned. Keep npc entries short. This comment is metadata, not prose.`);
+    blocks.push(`[HEARTPULSE STATE UPDATE — hidden bookkeeping] At the very end of your reply append exactly one HTML comment and nothing after it. This is your own honest internal read of ${name}, based on the reply you just wrote and established context. Do NOT ask the user to fill it. Keep it compact. Update only what genuinely changed; use null for unchanged inner fields. Format:
+<!--HEARTPULSE_STATE:{"label":"short relationship state","shift":"one short sentence","deltas":{"trust":2,"tension":-1},"inner":{"mood":"...","motives":"...","hiddenThought":"...","currentGoal":"...","futureDesire":"..."},"intentions_add":[],"intentions_done":[],"npc":[]}-->
+Allowed delta keys: ${REL_FIELDS.map(([k])=>k).join(', ')}. Typical delta is -5..+5; larger only for a major event. Inner fields: mood = current emotional tone; motives = why ${name} acts this way now; hiddenThought = a private thought not necessarily spoken; currentGoal = immediate aim; futureDesire = longer-term wish. Keep each under ~140 characters. Respect locked/manual values already provided in context. intentions_add contains durable concrete plans worth remembering across many replies; intentions_done contains exact durable plan texts completed or abandoned. NPC entries are short objects like {"name":"...","state":"..."}. This comment is metadata, not prose.`);
   }
   return blocks.join('\n');
 }
@@ -233,6 +262,14 @@ function applyStatePacket(packet){
   if(packet.label) s.relationLabel=String(packet.label).slice(0,100);
   if(packet.shift) s.lastShift=String(packet.shift).slice(0,300);
   if(packet.deltas&&typeof packet.deltas==='object') for(const [k] of REL_FIELDS) if(k in packet.deltas) s.relation[k]=clamp((s.relation[k]||0)+clamp(packet.deltas[k],-15,15));
+  if(packet.inner&&typeof packet.inner==='object'){
+    const allowed=['mood','motives','hiddenThought','currentGoal','futureDesire'];
+    for(const k of allowed){
+      if(s.innerLocks?.[k]) continue;
+      const v=packet.inner[k];
+      if(v!==null && v!==undefined && String(v).trim()) s.inner[k]=String(v).trim().slice(0,500);
+    }
+  }
   for(const text of (packet.intentions_add||[])){ const t=String(text).trim(); if(t&&!s.intentions.some(x=>x.text===t)) s.intentions.push({id:makeId(),text:t,priority:'обычно'}); }
   const done=new Set((packet.intentions_done||[]).map(x=>String(x).trim().toLowerCase()));
   if(done.size) s.intentions=s.intentions.filter(x=>!done.has(x.text.toLowerCase()));
@@ -250,21 +287,27 @@ async function parseLatestModelState(){
 function panelHtml(){
   const s=getState(), name=esc(currentCharName()), ui=readUi();
   const prefSet=new Set(s.kinks), activeSet=new Set(s.activeKinks);
+  const tab=ui.activeTab||'pulse';
+  const tabBtn=(id,label)=>`<button data-tab="${id}" class="${tab===id?'active':''}">${label}</button>`;
+  const page=(id,html)=>`<section data-page="${id}" class="hp-page ${tab===id?'active':''}">${html}</section>`;
+  const innerField=(key,label,placeholder)=>`<div class="hp-inner-field"><div class="hp-inner-title"><b>${label}</b><label title="Не менять автоматически"><input type="checkbox" data-inner-lock="${key}" ${s.innerLocks?.[key]?'checked':''}> 🔒</label></div><textarea class="hp-text hp-inner-text" data-inner="${key}" placeholder="${esc(placeholder)}">${esc(s.inner?.[key]||'')}</textarea></div>`;
+  const scan=(s.lastCardScan||[]);
   return `<div id="hpOverlay" class="hp-overlay hp-hidden"><div id="hpPanel" class="hp-panel">
-    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.5.1</div><h2>❤️‍🔥✨ ${name}</h2><p>Связь · искра · намерения · NPC · журнал</p></div><button class="hp-close">×</button></header>
-    <nav class="hp-tabs"><button data-tab="pulse" class="active">💗 Пульс</button><button data-tab="spark">❤️‍🔥 Искра</button><button data-tab="intent">🎯 Намерения</button><button data-tab="npc">👥 NPC</button><button data-tab="journal">📜 Журнал</button><button data-tab="model">👁 Модель</button></nav>
+    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.6.0</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
+    <nav class="hp-tabs">${tabBtn('pulse','💗 Пульс')}${tabBtn('spark','❤️‍🔥 Искра')}${tabBtn('intent','🎯 Намерения')}${tabBtn('npc','👥 NPC')}${tabBtn('journal','📜 Журнал')}${tabBtn('model','👁 Модель')}</nav>
     <main class="hp-body">
-      <section data-page="pulse" class="hp-page active"><div class="hp-soft-card"><h3>💞 Эмоциональная связь</h3><div class="hp-auto-status ${s.autoTrack?'on':''}">${s.autoTrack?'🤖 Авто-динамика включена: модель предложит только реальные изменения после ответа. Ползунки обновятся сами.':'🖐️ Авто-динамика выключена: значения меняешь ты вручную.'}</div><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: хрупкая забота"><div class="hp-rel-grid hp-rel-core">${REL_FIELDS.filter(([k])=>CORE_REL_KEYS.has(k)).map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k])}</b><input class="hp-range" data-rel="${k}" type="range" min="-100" max="100" value="${clamp(s.relation[k])}"></label>`).join('')}</div><details id="hpExtraFeelings" class="hp-extra-feelings" ${ui.extrasOpen?'open':''}><summary>✨ Дополнительные чувства (${REL_FIELDS.length-CORE_REL_KEYS.size})</summary><div class="hp-rel-grid">${REL_FIELDS.filter(([k])=>!CORE_REL_KEYS.has(k)).map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k])}</b><input class="hp-range" data-rel="${k}" type="range" min="-100" max="100" value="${clamp(s.relation[k])}"></label>`).join('')}</div></details>${s.lastShift?`<div class="hp-shift">✨ Последний сдвиг: ${esc(s.lastShift)}</div>`:''}<p class="hp-muted hp-tip">Можно ничего не двигать руками. Ползунки — это ещё и ручная коррекция: если модель оценила чувство не так, просто поправь значение.</p></div></section>
-      <section data-page="spark" class="hp-page"><div class="hp-hot-card"><h3>❤️‍🔥 Искра / кинки</h3><div class="hp-row"><label>Интенсивность <b>${s.kinkIntensity}</b><input id="hpIntensity" type="range" min="0" max="100" value="${s.kinkIntensity}"></label><label>Шанс авто-искра <b>${s.kinkChance}%</b><input id="hpChance" type="range" min="0" max="100" value="${s.kinkChance}"></label></div>
+      ${page('pulse',`<div class="hp-soft-card"><h3>💞 Эмоциональная связь</h3><div class="hp-auto-status ${s.autoTrack?'on':''}">${s.autoTrack?'🤖 Авто-динамика: модель сама обновляет анкету после своего обычного ответа.':'🖐️ Авто-динамика выключена: данные меняешь ты.'}</div><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: хрупкая забота"><div class="hp-rel-grid hp-rel-core">${REL_FIELDS.filter(([k])=>CORE_REL_KEYS.has(k)).map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k])}</b><input class="hp-range" data-rel="${k}" type="range" min="-100" max="100" value="${clamp(s.relation[k])}"></label>`).join('')}</div><details id="hpExtraFeelings" class="hp-extra-feelings" ${ui.extrasOpen?'open':''}><summary>✨ Дополнительные чувства (${REL_FIELDS.length-CORE_REL_KEYS.size})</summary><div class="hp-rel-grid">${REL_FIELDS.filter(([k])=>!CORE_REL_KEYS.has(k)).map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k])}</b><input class="hp-range" data-rel="${k}" type="range" min="-100" max="100" value="${clamp(s.relation[k])}"></label>`).join('')}</div></details>${s.lastShift?`<div class="hp-shift">✨ Последний сдвиг: ${esc(s.lastShift)}</div>`:''}<div class="hp-inner-mini"><h4>🧠 Что сейчас внутри</h4>${innerField('mood','Настроение','Например: спокойная решимость, тревога, азарт...')}${innerField('motives','Мотивы','Почему персонаж сейчас действует именно так...')}</div><p class="hp-muted hp-tip">Ничего заполнять не обязательно: при авто-динамике модель сама присылает состояние. Ты можешь поправить текст или поставить 🔒, чтобы модель его не меняла.</p></div>`)}
+      ${page('spark',`<div class="hp-hot-card"><h3>❤️‍🔥 Искра / кинки</h3><div class="hp-row"><label>Интенсивность <b id="hpIntensityVal">${s.kinkIntensity}</b><input id="hpIntensity" type="range" min="0" max="100" value="${s.kinkIntensity}"></label><label>Шанс авто-искра <b id="hpChanceVal">${s.kinkChance}%</b><input id="hpChance" type="range" min="0" max="100" value="${s.kinkChance}"></label></div>
       <div class="hp-subtitle">Постоянные предпочтения персонажа</div><div class="hp-chip-grid">${KINK_LIBRARY.map(([k,l])=>`<button class="hp-chip ${prefSet.has(k)?'on':''}" data-kink="${k}">${l}</button>`).join('')}</div>
-      <div class="hp-actions"><button id="hpScanCard">✨ Проверить карточку бесплатно</button></div><p class="hp-muted">Сканирование локальное: API не вызывается. Найденное сначала покажем тебе, и только потом добавим.</p>
+      <div class="hp-actions"><button id="hpScanCard">✨ Проверить карточку локально</button></div><p class="hp-muted">Без API и без отдельного запроса: HeartPulse читает текст карточки текущего персонажа и ищет известные признаки.</p>
+      <div class="hp-scan-report"><b>🩺 Анамнез карточки</b>${s.lastCardScanAt?`<span class="hp-muted">Последняя проверка: ${new Date(s.lastCardScanAt).toLocaleTimeString()}</span>`:''}${scan.length?`<div class="hp-scan-chips">${scan.map(k=>`<span>${esc(KINK_LABEL[k]||k)}</span>`).join('')}</div>`:'<p class="hp-muted">Ещё не проверено или явных совпадений не найдено.</p>'}</div>
       <div class="hp-subtitle">Активно именно в этой сцене</div><div class="hp-chip-grid hp-active-grid">${KINK_LIBRARY.map(([k,l])=>`<button class="hp-chip scene ${activeSet.has(k)?'on':''}" data-active-kink="${k}">${l}</button>`).join('')}</div>
       <textarea id="hpCustomKinks" class="hp-text" placeholder="Свои предпочтения — по одному с новой строки">${esc(s.customKinks.join('\n'))}</textarea>
-      <div class="hp-auto-box"><label><input id="hpAutoSpark" type="checkbox" ${s.autoSpark?'checked':''}> 🎲 Авто-искра без отдельного API-запроса</label><label>Пауза после срабатывания: <input id="hpCooldown" class="hp-mini-input" type="number" min="1" max="12" value="${s.sparkCooldown}"> ответов</label><div class="hp-muted">${s.lastSpark?`Последняя авто-искра: ${esc(s.lastSpark)} · осталось паузы ${s.sparkCooldownRemaining}`:'Авто-искра ещё не срабатывала.'}</div></div></div></section>
-      <section data-page="intent" class="hp-page"><div class="hp-gold-card"><h3>🎯 Незавершённые намерения</h3><div id="hpIntentList">${s.intentions.map(x=>`<div class="hp-intent" data-id="${esc(x.id)}"><span>${esc(x.text)}</span><button data-done="${esc(x.id)}">✓</button><button data-del="${esc(x.id)}">🗑</button></div>`).join('')||'<p class="hp-muted">Пока пусто.</p>'}</div><div class="hp-inline"><input id="hpIntentInput" class="hp-input" placeholder="Например: подарить кольцо в подходящий момент"><button id="hpIntentAdd">＋</button></div></div></section>
-      <section data-page="npc" class="hp-page"><div class="hp-soft-card"><h3>👥 NPC</h3><p class="hp-muted">NPC из последнего структурного обновления модели.</p><div>${(s.npc||[]).map(n=>`<div class="hp-npc"><b>${esc(n.name||'NPC')}</b><span>${esc(n.state||n.note||'')}</span></div>`).join('')||'<p class="hp-muted">Нет активных NPC.</p>'}</div></div></section>
-      <section data-page="journal" class="hp-page"><div class="hp-soft-card"><h3>📜 Журнал сдвигов</h3>${s.journal.map(j=>`<div class="hp-log"><time>${new Date(j.ts).toLocaleString()}</time><span>${esc(j.text)}</span></div>`).join('')||'<p class="hp-muted">Журнал пока пуст.</p>'}</div></section>
-      <section data-page="model" class="hp-page"><div class="hp-model-card"><h3>👁 Что увидит модель</h3><div class="hp-switches"><label><input id="hpEnabled" type="checkbox" ${s.enabled?'checked':''}> включить расширение</label><label><input id="hpAutoTrack" type="checkbox" ${s.autoTrack?'checked':''}> авто-обновление</label><label><input id="hpInjectRel" type="checkbox" ${s.injectRelation?'checked':''}> отношения</label><label><input id="hpInjectKinks" type="checkbox" ${s.injectKinks?'checked':''}> искра</label><label><input id="hpInjectIntent" type="checkbox" ${s.injectIntentions?'checked':''}> намерения</label><label><input id="hpShowFab" type="checkbox" ${ui.showFab?'checked':''}> плавающая кнопка</label></div><textarea id="hpManual" class="hp-text" placeholder="Постоянное ручное указание">${esc(s.manualDirective)}</textarea><textarea id="hpOneShot" class="hp-text" placeholder="Только следующий ответ">${esc(s.oneShotDirective)}</textarea><pre id="hpModelPreview"></pre></div></section>
+      <div class="hp-auto-box"><label><input id="hpAutoSpark" type="checkbox" ${s.autoSpark?'checked':''}> 🎲 Авто-искра без отдельного API-запроса</label><label>Пауза после срабатывания: <input id="hpCooldown" class="hp-mini-input" type="number" min="1" max="12" value="${s.sparkCooldown}"> ответов</label><div class="hp-muted">${s.lastSpark?`Последняя авто-искра: ${esc(s.lastSpark)} · осталось паузы ${s.sparkCooldownRemaining}`:'Авто-искра ещё не срабатывала.'}</div></div></div>`)}
+      ${page('intent',`<div class="hp-gold-card"><h3>🎯 Внутренние намерения</h3><p class="hp-muted">Эти поля может заполнять сама модель после ответа. Ручная правка всегда разрешена; 🔒 фиксирует поле.</p>${innerField('hiddenThought','Скрытая мысль','Что персонаж думает, но не говорит...')}${innerField('currentGoal','Цель сейчас','Чего он хочет добиться прямо сейчас...')}${innerField('futureDesire','Желание на будущее','К чему он хочет прийти позже...')}<div class="hp-subtitle">📌 Долгие цели, которые нельзя забыть</div><div id="hpIntentList">${s.intentions.map(x=>`<div class="hp-intent" data-id="${esc(x.id)}"><span>${esc(x.text)}</span><button data-done="${esc(x.id)}">✓</button><button data-del="${esc(x.id)}">🗑</button></div>`).join('')||'<p class="hp-muted">Пока пусто. Модель может добавить такую цель сама, либо ты добавишь вручную.</p>'}</div><div class="hp-inline"><input id="hpIntentInput" class="hp-input" placeholder="Например: подарить кольцо в подходящий момент"><button id="hpIntentAdd">＋</button></div></div>`)}
+      ${page('npc',`<div class="hp-soft-card"><h3>👥 NPC</h3><p class="hp-muted">NPC из последнего структурного обновления модели.</p><div>${(s.npc||[]).map(n=>`<div class="hp-npc"><b>${esc(n.name||'NPC')}</b><span>${esc(n.state||n.note||'')}</span></div>`).join('')||'<p class="hp-muted">Нет активных NPC.</p>'}</div></div>`)}
+      ${page('journal',`<div class="hp-soft-card"><h3>📜 Журнал сдвигов</h3>${s.journal.map(j=>`<div class="hp-log"><time>${new Date(j.ts).toLocaleString()}</time><span>${esc(j.text)}</span></div>`).join('')||'<p class="hp-muted">Журнал пока пуст.</p>'}</div>`)}
+      ${page('model',`<div class="hp-model-card"><h3>👁 Что увидит модель</h3><div class="hp-switches"><label><input id="hpEnabled" type="checkbox" ${s.enabled?'checked':''}> включить расширение</label><label><input id="hpAutoTrack" type="checkbox" ${s.autoTrack?'checked':''}> авто-анкета</label><label><input id="hpInjectRel" type="checkbox" ${s.injectRelation?'checked':''}> отношения / внутреннее состояние</label><label><input id="hpInjectKinks" type="checkbox" ${s.injectKinks?'checked':''}> искра</label><label><input id="hpInjectIntent" type="checkbox" ${s.injectIntentions?'checked':''}> долгие цели</label><label><input id="hpShowFab" type="checkbox" ${ui.showFab?'checked':''}> плавающая кнопка</label></div><textarea id="hpManual" class="hp-text" placeholder="Постоянное ручное указание">${esc(s.manualDirective)}</textarea><textarea id="hpOneShot" class="hp-text" placeholder="Только следующий ответ">${esc(s.oneShotDirective)}</textarea><pre id="hpModelPreview"></pre></div>`)}
     </main></div></div>`;
 }
 function renderModelPreview(){ const el=document.querySelector('#hpModelPreview'); if(el) el.textContent=buildPrompt({includeAutoSpark:false})||'Ничего не отправляется.'; }
@@ -325,35 +368,41 @@ function closePanel(){
 }
 function installGlobalOpenDelegation(){ return; }
 
-async function confirmScan(found){
-  if(!found.length){ toast('Явных совпадений в карточке не найдено'); return false; }
-  const labels=found.map(k=>`• ${KINK_LABEL[k]||k}`).join('\n');
-  const c=ctx();
-  if(c?.Popup?.show?.confirm){
-    const res=await c.Popup.show.confirm('HeartPulse: найдено в карточке',`${labels}\n\nДобавить эти предпочтения?`);
-    return res===c.POPUP_RESULT?.AFFIRMATIVE || res===1 || res===true;
-  }
-  return window.confirm(`Найдено в карточке:\n${labels}\n\nДобавить эти предпочтения?`);
+async function scanAndStoreCard(){
+  const found=scanCardKinks();
+  const s=getState();
+  s.lastCardScan=found;
+  s.lastCardScanAt=now();
+  if(found.length) s.kinks=[...new Set([...s.kinks,...found])];
+  await saveState();
+  if(found.length) toast(`Карточка проверена: найдено ${found.length}`,'success');
+  else toast('Карточка проверена: явных совпадений по словарю не найдено','info');
+  render();
+  return found;
 }
 
 function bind(){
   const q=(s)=>document.querySelector(s);
   q('.hp-close')?.addEventListener('click',closePanel);
-  document.querySelectorAll('.hp-tabs button').forEach(b=>b.addEventListener('click',()=>{ document.querySelectorAll('.hp-tabs button,.hp-page').forEach(x=>x.classList.remove('active')); b.classList.add('active'); q(`[data-page="${b.dataset.tab}"]`)?.classList.add('active'); renderModelPreview(); }));
+  document.querySelectorAll('.hp-tabs button').forEach(b=>b.addEventListener('click',()=>{ const ui=readUi(); ui.activeTab=b.dataset.tab; saveUi(ui); document.querySelectorAll('.hp-tabs button,.hp-page').forEach(x=>x.classList.remove('active')); b.classList.add('active'); q(`[data-page="${b.dataset.tab}"]`)?.classList.add('active'); renderModelPreview(); }));
   q('#hpExtraFeelings')?.addEventListener('toggle',e=>{ const ui=readUi(); ui.extrasOpen=e.target.open; saveUi(ui); });
   document.querySelectorAll('[data-rel]').forEach(r=>r.addEventListener('input',()=>{ const s=getState(); s.relation[r.dataset.rel]=Number(r.value); document.querySelector(`[data-val="${r.dataset.rel}"]`).textContent=r.value; writeBackup(s); }));
   document.querySelectorAll('[data-rel]').forEach(r=>r.addEventListener('change',saveState));
   q('#hpRelationLabel')?.addEventListener('change',async e=>{getState().relationLabel=e.target.value; await saveState();});
   document.querySelectorAll('[data-kink]').forEach(b=>b.addEventListener('click',async()=>{ const s=getState(),k=b.dataset.kink; s.kinks=s.kinks.includes(k)?s.kinks.filter(x=>x!==k):[...s.kinks,k]; b.classList.toggle('on'); await saveState(); }));
   document.querySelectorAll('[data-active-kink]').forEach(b=>b.addEventListener('click',async()=>{ const s=getState(),k=b.dataset.activeKink; s.activeKinks=s.activeKinks.includes(k)?s.activeKinks.filter(x=>x!==k):[...s.activeKinks,k]; b.classList.toggle('on'); await saveState(); }));
-  q('#hpIntensity')?.addEventListener('change',async e=>{getState().kinkIntensity=Number(e.target.value); await saveState(); render();});
-  q('#hpChance')?.addEventListener('change',async e=>{getState().kinkChance=Number(e.target.value); await saveState(); render();});
+  q('#hpIntensity')?.addEventListener('input',e=>{getState().kinkIntensity=Number(e.target.value); const v=q('#hpIntensityVal'); if(v)v.textContent=e.target.value; writeBackup(getState());});
+  q('#hpIntensity')?.addEventListener('change',saveState);
+  q('#hpChance')?.addEventListener('input',e=>{getState().kinkChance=Number(e.target.value); const v=q('#hpChanceVal'); if(v)v.textContent=`${e.target.value}%`; writeBackup(getState());});
+  q('#hpChance')?.addEventListener('change',saveState);
   q('#hpCooldown')?.addEventListener('change',async e=>{getState().sparkCooldown=clamp(Number(e.target.value),1,12); await saveState();});
   q('#hpAutoSpark')?.addEventListener('change',async e=>{getState().autoSpark=e.target.checked; await saveState();});
   q('#hpCustomKinks')?.addEventListener('change',async e=>{getState().customKinks=e.target.value.split(/\n+/).map(x=>x.trim()).filter(Boolean).slice(0,50); await saveState();});
-  q('#hpScanCard')?.addEventListener('click',async()=>{ const found=scanCardKinks(); if(!(await confirmScan(found))) return; const s=getState(); s.kinks=[...new Set([...s.kinks,...found])]; await saveState(); toast(`Добавлено из карточки: ${found.length}`,'success'); render(); });
+  q('#hpScanCard')?.addEventListener('click',scanAndStoreCard);
   q('#hpIntentAdd')?.addEventListener('click',async()=>{ const t=q('#hpIntentInput').value.trim(); if(!t)return; getState().intentions.push({id:makeId(),text:t,priority:'обычно'}); await saveState(); render(); });
   document.querySelectorAll('[data-done],[data-del]').forEach(b=>b.addEventListener('click',async()=>{ const id=b.dataset.done||b.dataset.del,s=getState(),hit=s.intentions.find(x=>x.id===id); s.intentions=s.intentions.filter(x=>x.id!==id); if(b.dataset.done&&hit){s.journal.unshift({ts:now(),type:'done',text:`Цель завершена: ${hit.text}`}); toast(`Цель завершена: ${hit.text}`,'success');} await saveState(); render(); }));
+  document.querySelectorAll('[data-inner]').forEach(el=>el.addEventListener('change',async()=>{ const s=getState(); s.inner[el.dataset.inner]=el.value.trim(); await saveState(); }));
+  document.querySelectorAll('[data-inner-lock]').forEach(el=>el.addEventListener('change',async()=>{ const s=getState(); s.innerLocks[el.dataset.innerLock]=el.checked; await saveState(); }));
   [['#hpEnabled','enabled'],['#hpAutoTrack','autoTrack'],['#hpInjectRel','injectRelation'],['#hpInjectKinks','injectKinks'],['#hpInjectIntent','injectIntentions']].forEach(([id,key])=>q(id)?.addEventListener('change',async e=>{getState()[key]=e.target.checked; await saveState(); renderModelPreview();}));
   q('#hpManual')?.addEventListener('change',async e=>{getState().manualDirective=e.target.value; await saveState();});
   q('#hpOneShot')?.addEventListener('change',async e=>{getState().oneShotDirective=e.target.value; await saveState();});
@@ -516,7 +565,7 @@ function init(){
   safeOn(event_types.MESSAGE_RECEIVED,()=>setTimeout(parseLatestModelState,80));
   safeOn(event_types.GENERATION_ENDED,async()=>{const s=getState();if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();}await refreshPrompt({includeAutoSpark:false});});
   setInterval(()=>{ ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); syncSettingsEntry(); },1800);
-  console.log('[HeartPulse] v0.5.1 ready');
+  console.log('[HeartPulse] v0.6.0 ready');
   return true;
 }
 

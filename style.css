@@ -104,3 +104,17 @@
     border-radius:18px!important;
   }
 }
+
+/* v0.6.0 — living character sheet, stable sliders, local card scan */
+.hp-inner-mini{margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08)}
+.hp-inner-mini h4{margin:0 0 10px;font-size:17px;color:#eadcf0}
+.hp-inner-field{margin:12px 0;padding:12px;border-radius:16px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.09)}
+.hp-inner-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:5px;color:#f0e7f3}
+.hp-inner-title label{font-size:13px;color:#c9b9ce;display:flex;align-items:center;gap:5px}
+.hp-inner-text{min-height:76px!important;margin:6px 0 0!important}
+.hp-scan-report{margin:12px 0 18px;padding:13px;border-radius:16px;border:1px solid rgba(255,140,88,.22);background:rgba(255,100,55,.055);display:grid;gap:8px}
+.hp-scan-report>b{color:#ffd3c4}
+.hp-scan-report>span{font-size:12px}
+.hp-scan-chips{display:flex;flex-wrap:wrap;gap:7px}
+.hp-scan-chips span{padding:7px 10px;border-radius:999px;border:1px solid rgba(255,137,91,.28);background:rgba(255,105,65,.09);font-size:13px;color:#ffe5dc}
+#hpIntensity,#hpChance,.hp-range{touch-action:pan-y!important}
