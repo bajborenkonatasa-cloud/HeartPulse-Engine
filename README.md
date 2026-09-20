@@ -17,3 +17,13 @@ Mobile-safe opener rebuild. Panel can be opened from:
 - SillyTavern wand/extensions menu
 
 This build intentionally disables dragging of the floating button to eliminate Android tap/drag conflicts.
+
+
+## v0.5.0
+- Draggable mobile ❤️‍🔥 button; position is saved locally.
+- Single pointer event path (no click/touch double-trigger).
+- Compact relationship screen: 6 main feelings + collapsible secondary feelings.
+- Automatic relationship updates remain optional and are parsed from a hidden HEARTPULSE_STATE comment in the model reply.
+- State-update prompt now uses sparse deltas to reduce tokens.
+- Manual sliders remain available as an override.
+- Panel is pinned to the viewport on mobile.

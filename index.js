@@ -5,7 +5,7 @@ const MODULE = 'heartpulse_engine';
 const PROMPT_ID = 'heartpulse_engine_context';
 const META_KEY = 'heartpulse_engine_state_v2';
 const BACKUP_PREFIX = 'heartpulse_engine_backup_v2:';
-const UI_KEY = 'heartpulse_engine_ui_v2';
+const UI_KEY = 'heartpulse_engine_ui_v3';
 
 const REL_FIELDS = [
   ['trust', 'Доверие'], ['affection', 'Привязанность'], ['desire', 'Желание'],
@@ -14,6 +14,8 @@ const REL_FIELDS = [
   ['admiration', 'Восхищение'], ['joy', 'Веселье'], ['tension', 'Напряжение'],
   ['antipathy', 'Антипатия'], ['respect', 'Уважение']
 ];
+
+const CORE_REL_KEYS = new Set(['trust','affection','desire','tension','jealousy','resentment']);
 
 const KINK_LIBRARY = [
   ['dominance','Доминирование'], ['bondage','Бондаж'], ['praise','Похвала'], ['teasing','Дразнение'],
@@ -111,7 +113,7 @@ function currentChatKey(){
 function backupKey(){ return BACKUP_PREFIX + currentChatKey(); }
 function readBackup(){ return safeParse(localStorage.getItem(backupKey())||''); }
 function writeBackup(state){ try{ localStorage.setItem(backupKey(), JSON.stringify(state)); }catch(e){ console.warn('[HeartPulse] backup failed',e); } }
-function readUi(){ return Object.assign({showFab:true,x:null,y:112}, safeParse(localStorage.getItem(UI_KEY)||'')||{}); }
+function readUi(){ return Object.assign({showFab:true,x:null,y:112,extrasOpen:false}, safeParse(localStorage.getItem(UI_KEY)||'')||{}); }
 function saveUi(ui){ try{ localStorage.setItem(UI_KEY,JSON.stringify(ui)); }catch{} }
 
 function getState(){
@@ -193,7 +195,7 @@ function buildPrompt({includeAutoSpark=false}={}){
   blocks.push(`Agency: control only ${name}, NPCs and the world. Never write {{user}}'s actions, dialogue, thoughts, feelings, decisions or consent.`);
   if(s.injectRelation){
     const active=REL_FIELDS.map(([k,label])=>`${label} ${clamp(s.relation[k])}/100`).join(' · ');
-    blocks.push(`[RELATIONSHIP] ${name}: ${s.relationLabel}. ${active}.`);
+    blocks.push(`[RELATIONSHIP STATE] ${name}: ${s.relationLabel}. ${active}. Treat these values as continuity cues, not mandatory behavior. Let the current scene and character remain primary.`);
   }
   if(s.injectIntentions && s.intentions.length){
     blocks.push(`[OPEN INTENTIONS] ${s.intentions.map(x=>`${x.text}${x.priority?' ('+x.priority+')':''}`).join('; ')}. Keep these plans alive across replies and advance them naturally when a plausible opportunity appears.`);
@@ -208,7 +210,9 @@ function buildPrompt({includeAutoSpark=false}={}){
   if(s.manualDirective.trim()) blocks.push(`[MANUAL DIRECTIVE] ${s.manualDirective.trim()}`);
   if(s.oneShotDirective.trim()) blocks.push(`[NEXT RESPONSE ONLY] ${s.oneShotDirective.trim()}`);
   if(s.autoTrack){
-    blocks.push(`[STATE UPDATE PROTOCOL] At the very end of your reply, append exactly one HTML comment and nothing after it. Keep it concise. Format:\n<!--HEARTPULSE_STATE:{"label":"short relationship state","shift":"one short sentence explaining the newest emotional shift","deltas":{"trust":0,"affection":0,"desire":0,"tenderness":0,"jealousy":0,"resentment":0,"irritation":0,"fear":0,"disappointment":0,"admiration":0,"joy":0,"tension":0,"antipathy":0,"respect":0},"intentions_add":[],"intentions_done":[],"npc":[]}-->\nUse only changes justified by the current reply. Deltas should normally be between -8 and +8; 0 if unchanged. Keep npc entries short.`);
+    blocks.push(`[HEARTPULSE STATE UPDATE — hidden bookkeeping] At the very end of your reply append exactly one HTML comment and nothing after it. Update only what genuinely changed in THIS reply; omit unchanged emotion keys to keep it short. Format:
+<!--HEARTPULSE_STATE:{"label":"short relationship state","shift":"one short sentence","deltas":{"trust":2,"tension":-1},"intentions_add":[],"intentions_done":[],"npc":[]}-->
+Allowed delta keys: ${REL_FIELDS.map(([k])=>k).join(', ')}. Typical delta is -5..+5; use larger only for a major event. intentions_add contains durable plans ${name} should remember and pursue later; intentions_done contains exact plan texts completed or abandoned. Keep npc entries short. This comment is metadata, not prose.`);
   }
   return blocks.join('\n');
 }
@@ -247,10 +251,10 @@ function panelHtml(){
   const s=getState(), name=esc(currentCharName()), ui=readUi();
   const prefSet=new Set(s.kinks), activeSet=new Set(s.activeKinks);
   return `<div id="hpPanel" class="hp-panel hp-hidden">
-    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.4.0</div><h2>❤️‍🔥✨ ${name}</h2><p>Связь · искра · намерения · NPC · журнал</p></div><button class="hp-close">×</button></header>
+    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.5.0</div><h2>❤️‍🔥✨ ${name}</h2><p>Связь · искра · намерения · NPC · журнал</p></div><button class="hp-close">×</button></header>
     <nav class="hp-tabs"><button data-tab="pulse" class="active">💗 Пульс</button><button data-tab="spark">❤️‍🔥 Искра</button><button data-tab="intent">🎯 Намерения</button><button data-tab="npc">👥 NPC</button><button data-tab="journal">📜 Журнал</button><button data-tab="model">👁 Модель</button></nav>
     <main class="hp-body">
-      <section data-page="pulse" class="hp-page active"><div class="hp-soft-card"><h3>💞 Эмоциональная связь</h3><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: хрупкая забота"><div class="hp-rel-grid">${REL_FIELDS.map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k])}</b><input class="hp-range" data-rel="${k}" type="range" min="-100" max="100" value="${clamp(s.relation[k])}"></label>`).join('')}</div>${s.lastShift?`<div class="hp-shift">✨ ${esc(s.lastShift)}</div>`:''}</div></section>
+      <section data-page="pulse" class="hp-page active"><div class="hp-soft-card"><h3>💞 Эмоциональная связь</h3><div class="hp-auto-status ${s.autoTrack?'on':''}">${s.autoTrack?'🤖 Авто-динамика включена: модель предложит только реальные изменения после ответа. Ползунки обновятся сами.':'🖐️ Авто-динамика выключена: значения меняешь ты вручную.'}</div><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: хрупкая забота"><div class="hp-rel-grid hp-rel-core">${REL_FIELDS.filter(([k])=>CORE_REL_KEYS.has(k)).map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k])}</b><input class="hp-range" data-rel="${k}" type="range" min="-100" max="100" value="${clamp(s.relation[k])}"></label>`).join('')}</div><details id="hpExtraFeelings" class="hp-extra-feelings" ${ui.extrasOpen?'open':''}><summary>✨ Дополнительные чувства (${REL_FIELDS.length-CORE_REL_KEYS.size})</summary><div class="hp-rel-grid">${REL_FIELDS.filter(([k])=>!CORE_REL_KEYS.has(k)).map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k])}</b><input class="hp-range" data-rel="${k}" type="range" min="-100" max="100" value="${clamp(s.relation[k])}"></label>`).join('')}</div></details>${s.lastShift?`<div class="hp-shift">✨ Последний сдвиг: ${esc(s.lastShift)}</div>`:''}<p class="hp-muted hp-tip">Можно ничего не двигать руками. Ползунки — это ещё и ручная коррекция: если модель оценила чувство не так, просто поправь значение.</p></div></section>
       <section data-page="spark" class="hp-page"><div class="hp-hot-card"><h3>❤️‍🔥 Искра / кинки</h3><div class="hp-row"><label>Интенсивность <b>${s.kinkIntensity}</b><input id="hpIntensity" type="range" min="0" max="100" value="${s.kinkIntensity}"></label><label>Шанс авто-искра <b>${s.kinkChance}%</b><input id="hpChance" type="range" min="0" max="100" value="${s.kinkChance}"></label></div>
       <div class="hp-subtitle">Постоянные предпочтения персонажа</div><div class="hp-chip-grid">${KINK_LIBRARY.map(([k,l])=>`<button class="hp-chip ${prefSet.has(k)?'on':''}" data-kink="${k}">${l}</button>`).join('')}</div>
       <div class="hp-actions"><button id="hpScanCard">✨ Проверить карточку бесплатно</button></div><p class="hp-muted">Сканирование локальное: API не вызывается. Найденное сначала покажем тебе, и только потом добавим.</p>
@@ -332,6 +336,7 @@ function bind(){
   const q=(s)=>document.querySelector(s);
   q('.hp-close')?.addEventListener('click',closePanel);
   document.querySelectorAll('.hp-tabs button').forEach(b=>b.addEventListener('click',()=>{ document.querySelectorAll('.hp-tabs button,.hp-page').forEach(x=>x.classList.remove('active')); b.classList.add('active'); q(`[data-page="${b.dataset.tab}"]`)?.classList.add('active'); renderModelPreview(); }));
+  q('#hpExtraFeelings')?.addEventListener('toggle',e=>{ const ui=readUi(); ui.extrasOpen=e.target.open; saveUi(ui); });
   document.querySelectorAll('[data-rel]').forEach(r=>r.addEventListener('input',()=>{ const s=getState(); s.relation[r.dataset.rel]=Number(r.value); document.querySelector(`[data-val="${r.dataset.rel}"]`).textContent=r.value; writeBackup(s); }));
   document.querySelectorAll('[data-rel]').forEach(r=>r.addEventListener('change',saveState));
   q('#hpRelationLabel')?.addEventListener('change',async e=>{getState().relationLabel=e.target.value; await saveState();});
@@ -389,8 +394,38 @@ function ensureButton(){
   }
   if(b.dataset.hpBound!=='1'){
     b.dataset.hpBound='1';
-    b.addEventListener('click',e=>{ e.preventDefault(); e.stopPropagation(); togglePanel(); });
-    b.addEventListener('touchend',e=>{ e.preventDefault(); e.stopPropagation(); togglePanel(); },{passive:false});
+    let drag=null;
+    b.addEventListener('pointerdown',e=>{
+      if(e.button!==undefined && e.button!==0) return;
+      const r=b.getBoundingClientRect();
+      drag={id:e.pointerId,startX:e.clientX,startY:e.clientY,offX:e.clientX-r.left,offY:e.clientY-r.top,moved:false};
+      try{ b.setPointerCapture(e.pointerId); }catch{}
+      b.classList.add('dragging');
+      e.preventDefault();
+    });
+    b.addEventListener('pointermove',e=>{
+      if(!drag || drag.id!==e.pointerId) return;
+      const dx=e.clientX-drag.startX, dy=e.clientY-drag.startY;
+      if(Math.hypot(dx,dy)>6) drag.moved=true;
+      if(!drag.moved) return;
+      const pad=8, w=b.offsetWidth||42, h=b.offsetHeight||42;
+      const x=Math.max(pad,Math.min(window.innerWidth-w-pad,e.clientX-drag.offX));
+      const y=Math.max(pad,Math.min(window.innerHeight-h-pad,e.clientY-drag.offY));
+      b.style.left=`${x}px`; b.style.top=`${y}px`; b.style.right='auto'; b.style.bottom='auto';
+      e.preventDefault();
+    });
+    const finish=e=>{
+      if(!drag || drag.id!==e.pointerId) return;
+      const wasMoved=drag.moved;
+      drag=null; b.classList.remove('dragging');
+      try{ b.releasePointerCapture(e.pointerId); }catch{}
+      if(wasMoved){
+        const r=b.getBoundingClientRect(), ui=readUi(); ui.x=Math.round(r.left); ui.y=Math.round(r.top); saveUi(ui);
+      }else togglePanel();
+      e.preventDefault(); e.stopPropagation();
+    };
+    b.addEventListener('pointerup',finish);
+    b.addEventListener('pointercancel',e=>{ if(drag&&drag.id===e.pointerId){ drag=null; b.classList.remove('dragging'); placeFab(); } });
   }
   placeFab(); syncFabVisibility();
   return true;
@@ -413,15 +448,6 @@ function togglePanel(){
   }
 }
 
-function openPanel(){
-  let p=document.querySelector('#hpPanel');
-  if(!p){ if(!ensurePanel()) return; p=document.querySelector('#hpPanel'); }
-  if(!p) return;
-  p.classList.remove('hp-hidden');
-  try{ renderModelPreview(); }catch(e){ console.error('[HeartPulse] preview refresh failed',e); }
-}
-function closePanel(){ document.querySelector('#hpPanel')?.classList.add('hp-hidden'); }
-
 function registerWandMenuItem(){
   if(document.querySelector('#hpWandMenuItem')) return true;
   const menu=document.querySelector('#extensionsMenu');
@@ -432,7 +458,6 @@ function registerWandMenuItem(){
   item.tabIndex=0;
   item.innerHTML='<i class="fa-solid fa-heart-pulse"></i><span>HeartPulse Engine</span>';
   item.addEventListener('click',e=>{ e.preventDefault(); e.stopPropagation(); openPanel(); });
-  item.addEventListener('touchend',e=>{ e.preventDefault(); e.stopPropagation(); openPanel(); },{passive:false});
   menu.appendChild(item);
   return true;
 }
@@ -461,7 +486,6 @@ function ensureSettingsEntry(){
   host.appendChild(wrap);
   const openBtn=wrap.querySelector('#hpOpenFromSettings');
   openBtn?.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();openPanel();});
-  openBtn?.addEventListener('touchend',e=>{e.preventDefault();e.stopPropagation();openPanel();},{passive:false});
   const cb=wrap.querySelector('#hpSettingsShowFab');
   if(cb){
     cb.checked=!!readUi().showFab;
@@ -493,7 +517,7 @@ function init(){
   safeOn(event_types.MESSAGE_RECEIVED,()=>setTimeout(parseLatestModelState,80));
   safeOn(event_types.GENERATION_ENDED,async()=>{const s=getState();if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();}await refreshPrompt({includeAutoSpark:false});});
   setInterval(()=>{ ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); syncSettingsEntry(); },1800);
-  console.log('[HeartPulse] v0.4.0 ready');
+  console.log('[HeartPulse] v0.5.0 ready');
   return true;
 }
 
