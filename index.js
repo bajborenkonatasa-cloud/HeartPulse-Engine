@@ -455,9 +455,11 @@ function findHeartPulsePacket(text){
       Array.isArray(obj.intentions_done)
     ].filter(Boolean).length;
     if(schemaHits<3) continue;
-    const tail=text.slice(bal.end).trim();
-    if(tail.length>0) continue;
-    return {packet:obj,source:'bare-json',start,end:bal.end,raw:bal.json};
+    // Do NOT require the JSON to be the absolute last thing in the message.
+    // SillyTavern/other extensions may append visible blocks (cycle/status/etc.) after
+    // the assistant text. If the object strongly matches the HeartPulse schema,
+    // capture only the JSON span and leave everything after it untouched.
+    return {packet:obj,source:'bare-json-embedded',start,end:bal.end,raw:bal.json};
   }
   return null;
 }
