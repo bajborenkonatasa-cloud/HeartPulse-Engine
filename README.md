@@ -89,19 +89,26 @@ This build intentionally disables dragging of the floating button to eliminate A
 - Diagnostics status is persisted on every parse path, so “Ещё не проверялось” no longer survives after an actual check.
 
 
-## v0.9.8 bare-JSON parser hotfix
+## v0.9.9 bare-JSON parser hotfix
 - Fixes a JavaScript ReferenceError in the bare JSON recovery path (`end` was referenced as an undeclared variable).
 - Bare HeartPulse packets can now be captured and removed correctly.
 - Parser exceptions are now written into Diagnostics instead of leaving the status stuck at “Ещё не проверялось”.
 
 
-## v0.9.8 — rollback hidden transport
+## v0.9.9 — rollback hidden transport
 - Returned auto-profile transport to the original hidden HTML-comment form only.
 - Removed XML/plain/bare-JSON fallbacks from parsing.
 - If the model cannot keep the service packet hidden, it is instructed to omit the update instead of printing metadata into roleplay chat.
 
 
-## v0.9.8
+## v0.9.9
 - Fixed assistant message field access in the hidden HeartPulse packet parser (`mes`, not the wrapper object).
 - Fixed hidden payload cleanup to edit `mes` correctly after a successful parse.
 - No visual/CSS changes.
+
+
+## v0.9.9 — transport fix
+- HeartPulse no longer depends on HTML comments surviving SillyTavern/provider processing.
+- The model appends a bounded `[[HEARTPULSE_STATE]]` service packet.
+- The extension consumes the exact `MESSAGE_RECEIVED` message by its message ID, applies state, and strips the packet before normal character rendering.
+- Legacy HTML-comment packets remain readable as a fallback.
