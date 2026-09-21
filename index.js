@@ -326,11 +326,15 @@ function maybePrepareAutoSpark(){
 }
 
 function visibleFeelingKeys(s){
+  // Keep the model-selected salient feelings first, but always fill the Pulse
+  // to six slots when possible. This is display-only: it does not change the
+  // parser, transport, stored relation values, or activeFeelings semantics.
   const requested=(Array.isArray(s.activeFeelings)?s.activeFeelings:[]).filter(k=>REL_LABEL[k]);
-  const uniq=[...new Set(requested)].slice(0,6);
-  if(uniq.length) return uniq;
-  const ranked=REL_KEYS.map(k=>[k,clamp(s.relation[k],0,REL_MAX)]).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).map(([k])=>k);
-  return [...new Set([...ranked,...DEFAULT_VISIBLE_REL])].slice(0,6);
+  const ranked=REL_KEYS.map(k=>[k,clamp(s.relation[k],0,REL_MAX)])
+    .filter(([,v])=>v>0)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([k])=>k);
+  return [...new Set([...requested,...ranked,...DEFAULT_VISIBLE_REL])].slice(0,6);
 }
 function allFeelingsCompact(s){
   return REL_FIELDS.map(([k,l])=>`${l}:${clamp(s.relation[k],0,REL_MAX)}`).join(',');
@@ -368,7 +372,7 @@ function buildPrompt({includeAutoSpark=false}={}){
 [[HEARTPULSE_STATE]]
 {"label":"...","shift":"...","active":["love","tenderness"],"note":"1–2 short sentences explaining what is emotionally strongest right now","levels":null,"deltas":{},"inner":{"mood":null,"motives":null,"hiddenThought":null,"currentGoal":null,"futureDesire":null},"intentions_add":[],"intentions_done":[],"npc":[{"name":"...","state":"...","mood":"...","motive":"...","goal":"...","relation":{"trust":0,"affection":0,"desire":0,"irritation":0,"fear":0,"respect":0}}]}
 [[/HEARTPULSE_STATE]]
-Do NOT wrap this packet in a code fence, XML, HTML comment, markdown, or prose. Do not put anything after the closing boundary. HeartPulse removes this packet locally before normal rendering. ${calibration} Keep text fields compact and in Russian. NPCs: include only active/relevant NPCs, but give each a small persistent profile.
+Do NOT wrap this packet in a code fence, XML, HTML comment, markdown, or prose. Do not put anything after the closing boundary. HeartPulse removes this packet locally before normal rendering. ${calibration} Keep text fields compact and in Russian. NPCs: if any named NPC other than the main character is present, mentioned, or materially relevant in the current reply/context, include that NPC in the npc array and give them a small persistent profile. Do not omit an active named NPC just because their state changed only slightly.
 Keys: ${REL_FIELDS.map(([k])=>k).join(',')}. Scale: 0-30 absent/very weak, 31-70 emerging, 71-110 established, 111-150 very strong, 151-180 extreme, 181-200 dominant. Track the full emotional state internally, but "active" MUST contain only 1–6 feelings that are genuinely salient in THIS moment. Do not fill all feelings just because they exist. "note" is a compact explanation of the current emotional mix. Independent feelings may coexist. Use null for unchanged inner fields. Durable plans only in intentions_add.`);
   }
   return blocks.join('\n');
@@ -552,7 +556,7 @@ function panelHtml(){
   const innerField=(key,label,placeholder)=>`<div class="hp-inner-field"><div class="hp-inner-title"><b>${label}</b><label class="hp-lock-toggle" title="Зафиксировать поле: модель перестанет менять его автоматически"><input type="checkbox" data-inner-lock="${key}" ${s.innerLocks?.[key]?'checked':''}><span>🔒</span></label></div><textarea class="hp-text hp-inner-text" data-inner="${key}" placeholder="${esc(placeholder)}">${esc(s.inner?.[key]||'')}</textarea></div>`;
   const scan=(s.lastCardScan||[]);
   return `<div id="hpOverlay" class="hp-overlay hp-hidden"><div id="hpPanel" class="hp-panel">
-    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.9.9</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
+    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.9.9.1</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
     <nav class="hp-tabs">${tabBtn('pulse','💗 Пульс')}${tabBtn('spark','❤️‍🔥 Искра')}${tabBtn('intent','🎯 Намерения')}${tabBtn('npc','👥 NPC')}${tabBtn('journal','📜 Журнал')}${tabBtn('model','👁 Модель')}</nav>
     <main class="hp-body">
       ${page('pulse',`<div class="hp-soft-card"><h3>💞 Эмоциональный пульс</h3><div class="hp-auto-status ${s.autoTrack?'on':''}">${s.autoTrack?'🤖 HeartPulse хранит полную палитру чувств, а здесь показывает только 1–6 самых актуальных сейчас.':'🖐️ Авто-динамика выключена: данные меняешь ты.'}</div><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: взаимное движение навстречу"><div class="hp-actions"><button id="hpRecalibrate">${s.recalibrationRequested?'⏳ Переоценка — со следующим ответом':'🧭 Переоценить отношения'}</button></div><p class="hp-muted hp-micro">Внутри движка остаются все чувства 0–200. На экран выводятся только 1–6 чувств, которые сейчас реально важны.</p><div class="hp-rel-grid hp-rel-active">${visibleFeelingKeys(s).map(k=>`<label>${esc(REL_LABEL[k]||k)}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div>${s.feelingNote?`<div class="hp-feeling-note">💭 ${esc(s.feelingNote)}</div>`:''}${s.lastShift?`<div class="hp-shift">✨ Последний сдвиг: ${esc(s.lastShift)}</div>`:''}<details id="hpAllFeelings" class="hp-extra-feelings"><summary>🧠 Вся внутренняя палитра (${REL_FIELDS.length})</summary><p class="hp-muted hp-micro">Это скрытый движок. Обычно сюда заходить не нужно; можно раскрыть для ручной правки.</p><div class="hp-rel-grid">${REL_FIELDS.map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div></details><div class="hp-inner-mini"><h4>🧠 Что сейчас внутри</h4>${innerField('mood','Настроение','Например: спокойная решимость, тревога, азарт...')}${innerField('motives','Мотивы','Почему персонаж сейчас действует именно так...')}</div><p class="hp-muted hp-tip">Модель сама решает, какие чувства сейчас активны. Если обида, страсть, ревность, дружба или другое состояние действительно стали важны — оно появится в верхних 1–6 ползунках.</p></div>`)}
