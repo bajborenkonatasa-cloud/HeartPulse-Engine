@@ -364,9 +364,7 @@ function buildPrompt({includeAutoSpark=false}={}){
     const calibration = !s.calibrated
       ? `CALIBRATE now from the established chat context already available. Return absolute "levels" (0-${REL_MAX}) for all relation keys; do not assume zero just because HeartPulse is new.`
       : `Return only genuine "deltas" for changed relation keys (usually -5..+5, major event up to 15).`;
-    blocks.push(`[HP UPDATE] At the very end of the reply emit exactly ONE machine-readable HeartPulse packet and nothing after it. Preferred format is <HEARTPULSE_STATE>{JSON}</HEARTPULSE_STATE>. The HTML-comment example below is accepted only as a fallback. Never put the packet in the visible prose. ${calibration} Keep text fields compact and in Russian. NPCs: include only active/relevant NPCs, but give each a small persistent profile.
-<HEARTPULSE_STATE>{"label":"...","shift":"...","active":["love","tenderness"],"note":"...","levels":null,"deltas":{},"inner":{"mood":null,"motives":null,"hiddenThought":null,"currentGoal":null,"futureDesire":null},"intentions_add":[],"intentions_done":[],"npc":[]}</HEARTPULSE_STATE>
-Fallback example:
+    blocks.push(`[HP UPDATE] Use the ORIGINAL hidden transport only. At the very end of the reply emit exactly ONE HTML comment in the exact form below, and nothing after it. NEVER print the JSON as visible text, NEVER use XML tags, code fences, or a plain JSON object. If you cannot keep it hidden, OMIT the HeartPulse update rather than showing metadata to the user. ${calibration} Keep text fields compact and in Russian. NPCs: include only active/relevant NPCs, but give each a small persistent profile.
 <!--HEARTPULSE_STATE:{"label":"...","shift":"...","active":["love","tenderness"],"note":"1–2 short sentences explaining what is emotionally strongest right now","levels":null,"deltas":{},"inner":{"mood":null,"motives":null,"hiddenThought":null,"currentGoal":null,"futureDesire":null},"intentions_add":[],"intentions_done":[],"npc":[{"name":"...","state":"...","mood":"...","motive":"...","goal":"...","relation":{"trust":0,"affection":0,"desire":0,"irritation":0,"fear":0,"respect":0}}]}-->
 Keys: ${REL_FIELDS.map(([k])=>k).join(',')}. Scale: 0-30 absent/very weak, 31-70 emerging, 71-110 established, 111-150 very strong, 151-180 extreme, 181-200 dominant. Track the full emotional state internally, but "active" MUST contain only 1–6 feelings that are genuinely salient in THIS moment. Do not fill all feelings just because they exist. "note" is a compact explanation of the current emotional mix. Independent feelings may coexist. Use null for unchanged inner fields. Durable plans only in intentions_add.`);
   }
@@ -438,57 +436,20 @@ function extractBalancedJson(text,start){
   return null;
 }
 function findHeartPulsePacket(text){
-  const markers=[
-    {marker:'<!--HEARTPULSE_STATE:',source:'html-comment',suffix:'-->'},
-    {marker:'<HEARTPULSE_STATE>',source:'xml-tag',suffix:'</HEARTPULSE_STATE>'},
-    {marker:'HEARTPULSE_STATE:',source:'plain-marker',suffix:''}
-  ];
-  for(const def of markers){
-    const pos=text.lastIndexOf(def.marker);
-    if(pos<0) continue;
-    const bal=extractBalancedJson(text,pos+def.marker.length);
-    if(!bal) continue;
-    let removeEnd=bal.end;
-    if(def.suffix){ const sx=text.indexOf(def.suffix,bal.end); if(sx>=0) removeEnd=sx+def.suffix.length; }
-    return {packet:safeParse(bal.json),source:def.source,start:pos,end:removeEnd,raw:bal.json};
-  }
-  const fence=/```(?:json)?\s*([\s\S]*?)```/gi; let m,last=null;
-  while((m=fence.exec(text))){ if(/heartpulse/i.test(m[1])) last={m,index:m.index}; }
-  if(last){
-    const inner=last.m[1]; const key=inner.search(/HEARTPULSE_STATE\s*[:=]/i);
-    const brace=key>=0?inner.indexOf('{',key):inner.indexOf('{');
-    if(brace>=0){ const bal=extractBalancedJson(inner,brace); if(bal){ const obj=safeParse(bal.json); if(obj) return {packet:obj.HEARTPULSE_STATE||obj.heartpulse_state||obj,source:'code-fence',start:last.index,end:last.index+last.m[0].length,raw:bal.json}; } }
-  }
-
-  // Some models ignore the requested wrapper and print the HeartPulse JSON directly.
-  // Accept a trailing bare JSON object only when it strongly matches our schema,
-  // then remove it from the visible chat just like a wrapped packet.
-  const starts=[];
-  const re=/\{\s*"label"\s*:/g; let bm;
-  while((bm=re.exec(text))) starts.push(bm.index);
-  for(let n=starts.length-1;n>=0;n--){
-    const start=starts[n];
-    const bal=extractBalancedJson(text,start);
-    if(!bal) continue;
-    const obj=safeParse(bal.json);
-    if(!obj || typeof obj!=='object' || Array.isArray(obj)) continue;
-    const schemaHits=[
-      Array.isArray(obj.active),
-      obj.levels&&typeof obj.levels==='object',
-      obj.deltas&&typeof obj.deltas==='object',
-      obj.inner&&typeof obj.inner==='object',
-      Array.isArray(obj.npc),
-      Array.isArray(obj.intentions_add),
-      Array.isArray(obj.intentions_done)
-    ].filter(Boolean).length;
-    if(schemaHits<3) continue;
-    // Do NOT require the JSON to be the absolute last thing in the message.
-    // SillyTavern/other extensions may append visible blocks (cycle/status/etc.) after
-    // the assistant text. If the object strongly matches the HeartPulse schema,
-    // capture only the JSON span and leave everything after it untouched.
-    return {packet:obj,source:'bare-json-embedded',start,end:bal.end,raw:bal.json};
-  }
-  return null;
+  // Rollback to the original hidden transport: accept ONLY the HTML comment.
+  // This deliberately refuses bare/visible JSON so HeartPulse never treats chat prose
+  // as its service payload.
+  const marker='<!--HEARTPULSE_STATE:';
+  const pos=text.lastIndexOf(marker);
+  if(pos<0) return null;
+  const bal=extractBalancedJson(text,pos+marker.length);
+  if(!bal) return null;
+  const suffix='-->';
+  const sx=text.indexOf(suffix,bal.end);
+  if(sx<0) return null;
+  const packet=safeParse(bal.json);
+  if(!packet) return null;
+  return {packet,source:'html-comment-original',start:pos,end:sx+suffix.length,raw:bal.json};
 }
 async function parseLatestModelState(reason='event'){
   const c=ctx(); if(!c?.chat) return false;
@@ -508,7 +469,18 @@ async function parseLatestModelState(reason='event'){
 
   const {m:last,i:index}=indexed;
   d.lastAssistantIndex=index;
-  const found=findHeartPulsePacket(last.m);
+  let found=null;
+  try{
+    found=findHeartPulsePacket(last.m);
+  }catch(e){
+    d.lastParseStatus='Ошибка разбора пакета';
+    d.lastParseError=String(e?.message||e);
+    d.lastPacketSource='parser-exception';
+    await persistExactState(s);
+    console.warn('[HeartPulse] packet parser failed',e);
+    renderModelPreview();
+    return false;
+  }
   if(!found || !found.packet){
     if(d.lastAppliedAssistantIndex===index && String(d.lastParseStatus||'').includes('применён')){
       await persistExactState(s);
@@ -561,7 +533,7 @@ function panelHtml(){
   const innerField=(key,label,placeholder)=>`<div class="hp-inner-field"><div class="hp-inner-title"><b>${label}</b><label class="hp-lock-toggle" title="Зафиксировать поле: модель перестанет менять его автоматически"><input type="checkbox" data-inner-lock="${key}" ${s.innerLocks?.[key]?'checked':''}><span>🔒</span></label></div><textarea class="hp-text hp-inner-text" data-inner="${key}" placeholder="${esc(placeholder)}">${esc(s.inner?.[key]||'')}</textarea></div>`;
   const scan=(s.lastCardScan||[]);
   return `<div id="hpOverlay" class="hp-overlay hp-hidden"><div id="hpPanel" class="hp-panel">
-    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.9.5</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
+    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.9.7</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
     <nav class="hp-tabs">${tabBtn('pulse','💗 Пульс')}${tabBtn('spark','❤️‍🔥 Искра')}${tabBtn('intent','🎯 Намерения')}${tabBtn('npc','👥 NPC')}${tabBtn('journal','📜 Журнал')}${tabBtn('model','👁 Модель')}</nav>
     <main class="hp-body">
       ${page('pulse',`<div class="hp-soft-card"><h3>💞 Эмоциональный пульс</h3><div class="hp-auto-status ${s.autoTrack?'on':''}">${s.autoTrack?'🤖 HeartPulse хранит полную палитру чувств, а здесь показывает только 1–6 самых актуальных сейчас.':'🖐️ Авто-динамика выключена: данные меняешь ты.'}</div><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: взаимное движение навстречу"><div class="hp-actions"><button id="hpRecalibrate">${s.recalibrationRequested?'⏳ Переоценка — со следующим ответом':'🧭 Переоценить отношения'}</button></div><p class="hp-muted hp-micro">Внутри движка остаются все чувства 0–200. На экран выводятся только 1–6 чувств, которые сейчас реально важны.</p><div class="hp-rel-grid hp-rel-active">${visibleFeelingKeys(s).map(k=>`<label>${esc(REL_LABEL[k]||k)}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div>${s.feelingNote?`<div class="hp-feeling-note">💭 ${esc(s.feelingNote)}</div>`:''}${s.lastShift?`<div class="hp-shift">✨ Последний сдвиг: ${esc(s.lastShift)}</div>`:''}<details id="hpAllFeelings" class="hp-extra-feelings"><summary>🧠 Вся внутренняя палитра (${REL_FIELDS.length})</summary><p class="hp-muted hp-micro">Это скрытый движок. Обычно сюда заходить не нужно; можно раскрыть для ручной правки.</p><div class="hp-rel-grid">${REL_FIELDS.map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div></details><div class="hp-inner-mini"><h4>🧠 Что сейчас внутри</h4>${innerField('mood','Настроение','Например: спокойная решимость, тревога, азарт...')}${innerField('motives','Мотивы','Почему персонаж сейчас действует именно так...')}</div><p class="hp-muted hp-tip">Модель сама решает, какие чувства сейчас активны. Если обида, страсть, ревность, дружба или другое состояние действительно стали важны — оно появится в верхних 1–6 ползунках.</p></div>`)}
@@ -838,7 +810,7 @@ function init(){
   safeOn(event_types.MESSAGE_RECEIVED,()=>{ [80,350,900].forEach(ms=>setTimeout(()=>parseLatestModelState('MESSAGE_RECEIVED'),ms)); });
   safeOn(event_types.GENERATION_ENDED,async()=>{ await parseLatestModelState('GENERATION_ENDED'); setTimeout(()=>parseLatestModelState('GENERATION_ENDED+500ms'),500); const s=getState();if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();}await refreshPrompt({includeAutoSpark:false});});
   setInterval(()=>{ ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); syncSettingsEntry(); },1800);
-  console.log('[HeartPulse] v0.9.5 ready');
+  console.log('[HeartPulse] v0.9.6 ready');
   return true;
 }
 

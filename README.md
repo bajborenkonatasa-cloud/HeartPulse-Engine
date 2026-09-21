@@ -87,3 +87,15 @@ This build intentionally disables dragging of the floating button to eliminate A
 - Fixes a state race where a freshly parsed model packet could be overwritten by an older local backup before persistence.
 - Parser now applies the packet to one exact state object and persists that same object to chat metadata + local backup.
 - Diagnostics status is persisted on every parse path, so “Ещё не проверялось” no longer survives after an actual check.
+
+
+## v0.9.7 bare-JSON parser hotfix
+- Fixes a JavaScript ReferenceError in the bare JSON recovery path (`end` was referenced as an undeclared variable).
+- Bare HeartPulse packets can now be captured and removed correctly.
+- Parser exceptions are now written into Diagnostics instead of leaving the status stuck at “Ещё не проверялось”.
+
+
+## v0.9.7 — rollback hidden transport
+- Returned auto-profile transport to the original hidden HTML-comment form only.
+- Removed XML/plain/bare-JSON fallbacks from parsing.
+- If the model cannot keep the service packet hidden, it is instructed to omit the update instead of printing metadata into roleplay chat.
