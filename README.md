@@ -89,40 +89,49 @@ This build intentionally disables dragging of the floating button to eliminate A
 - Diagnostics status is persisted on every parse path, so “Ещё не проверялось” no longer survives after an actual check.
 
 
-## v0.9.9.2 bare-JSON parser hotfix
+## v0.9.9.3 bare-JSON parser hotfix
 - Fixes a JavaScript ReferenceError in the bare JSON recovery path (`end` was referenced as an undeclared variable).
 - Bare HeartPulse packets can now be captured and removed correctly.
 - Parser exceptions are now written into Diagnostics instead of leaving the status stuck at “Ещё не проверялось”.
 
 
-## v0.9.9.2 — rollback hidden transport
+## v0.9.9.3 — rollback hidden transport
 - Returned auto-profile transport to the original hidden HTML-comment form only.
 - Removed XML/plain/bare-JSON fallbacks from parsing.
 - If the model cannot keep the service packet hidden, it is instructed to omit the update instead of printing metadata into roleplay chat.
 
 
-## v0.9.9.2
+## v0.9.9.3
 - Fixed assistant message field access in the hidden HeartPulse packet parser (`mes`, not the wrapper object).
 - Fixed hidden payload cleanup to edit `mes` correctly after a successful parse.
 - No visual/CSS changes.
 
 
-## v0.9.9.2 — transport fix
+## v0.9.9.3 — transport fix
 - HeartPulse no longer depends on HTML comments surviving SillyTavern/provider processing.
 - The model appends a bounded `[[HEARTPULSE_STATE]]` service packet.
 - The extension consumes the exact `MESSAGE_RECEIVED` message by its message ID, applies state, and strips the packet before normal character rendering.
 - Legacy HTML-comment packets remain readable as a fallback.
 
 
-## v0.9.9.2
+## v0.9.9.3
 - Pulse now fills up to exactly six visible feeling sliders when enough stored non-zero feelings exist, while keeping model-selected salient feelings first.
 - NPC update instruction is stricter: named NPCs that are present, mentioned, or materially relevant should be returned in the service packet.
 - No changes to the stable v0.9.9 service-packet parser or transport.
 
 
-## v0.9.9.2 — NPC patch
+## v0.9.9.3 — NPC patch
 - Named NPCs that appear, are mentioned by the user, or matter to the current scene are now explicitly required in the service packet.
 - Up to 8 recent saved NPC profiles are sent back to the model as compact continuity memory.
 - NPC tab now supports manual add/edit/delete and manual relationship values.
 - Deleting an NPC removes it from HeartPulse NPC memory, so it is no longer injected as saved continuity.
 - Stable v0.9.9 service-packet transport is unchanged.
+
+
+## v0.9.9.3
+- Compact Spark/kink cells and compact NPC editor/cards.
+- Short UI label `Сомнофилия`; existing agency/safety guidance is unchanged.
+- Journal shows the latest 10 by default, groups visible entries by date, and can show the full active journal.
+- Journal entries can be edited/deleted; selected entries can be merged.
+- Older journal entries can be moved to a local archive without deleting current feelings, goals, or NPC state.
+- Working v0.9.9.x service-packet transport/parser logic was not changed.

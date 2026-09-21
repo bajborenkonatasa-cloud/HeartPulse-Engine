@@ -269,3 +269,38 @@
 .hp-npc-head>div{display:flex;gap:6px}
 .hp-npc-head button{border:1px solid rgba(255,255,255,.12);border-radius:9px;background:rgba(255,255,255,.04);color:#eee;padding:5px 7px}
 @media(max-width:520px){.hp-npc-form-grid,.hp-npc-rel-edit{grid-template-columns:1fr 1fr}}
+
+
+/* v0.9.9.3 — compact Spark/NPC + manageable journal */
+.hp-hot-card .hp-chip-grid{gap:6px;margin:7px 0 12px}
+.hp-hot-card .hp-chip{padding:7px 7px;border-radius:14px;font-size:12.5px;line-height:1.2;min-height:34px}
+.hp-hot-card .hp-subtitle{margin:13px 0 6px}
+.hp-hot-card .hp-scan-chips{gap:5px}
+.hp-hot-card .hp-scan-chips span{padding:5px 8px;font-size:12px}
+.hp-npc-form{gap:6px;margin:9px 0 12px;padding:9px}
+.hp-npc-form .hp-input{padding:9px 10px;font-size:13px}
+.hp-npc-form .hp-text{min-height:54px!important;padding:9px 10px;font-size:13px}
+.hp-npc-form-grid,.hp-npc-rel-edit{gap:5px}
+.hp-npc-rel-edit label{padding:5px 6px;font-size:11.5px}
+.hp-npc{padding:9px!important;margin:5px 0!important;gap:4px!important}
+.hp-npc>b,.hp-npc-head>b{font-size:14px}
+.hp-npc>span{font-size:13px;line-height:1.28}
+.hp-npc>small{font-size:11.5px;line-height:1.25}
+.hp-journal-card{padding:14px!important}
+.hp-journal-title{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.hp-journal-title h3{margin-bottom:6px!important}
+.hp-journal-tools{display:flex;flex-wrap:wrap;gap:6px;margin:7px 0 10px}
+.hp-journal-tools button,.hp-log-actions button{border:1px solid rgba(255,255,255,.13);border-radius:9px;background:rgba(255,255,255,.045);color:#eee;padding:6px 8px;font-size:11.5px}
+.hp-journal-group{margin:8px 0 12px}
+.hp-journal-day{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#c9a7d4;margin:0 0 5px 2px}
+.hp-log{padding:9px!important;margin:5px 0!important;gap:5px!important}
+.hp-log-top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:6px}
+.hp-log-select{display:flex;align-items:center}
+.hp-log time{font-size:10.5px!important}
+.hp-log span{font-size:13px;line-height:1.3}
+.hp-log-actions{display:flex;gap:4px}
+.hp-log-actions button{padding:4px 6px}
+.hp-journal-archive{margin-top:12px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08)}
+.hp-journal-archive summary{cursor:pointer;color:#d9c5df}
+.hp-log-archived{opacity:.72}
+@media(max-width:520px){.hp-hot-card .hp-chip{font-size:12px;min-height:32px;padding:6px}.hp-journal-tools button{flex:1 1 auto}.hp-journal-title{display:block}}
