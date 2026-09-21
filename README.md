@@ -78,6 +78,12 @@ This build intentionally disables dragging of the floating button to eliminate A
 - The parser now removes only the detected HeartPulse JSON block and preserves content that follows it.
 
 
-## v0.9.4
+## v0.9.5
 - Tolerant HeartPulse packet parser: accepts LLM JSON-like numeric deltas written with a leading `+` (for example `"jealousy": +18`).
-- Panel/version console label corrected to v0.9.4.
+- Panel/version console label corrected to v0.9.5.
+
+
+## v0.9.5 parser-state fix
+- Fixes a state race where a freshly parsed model packet could be overwritten by an older local backup before persistence.
+- Parser now applies the packet to one exact state object and persists that same object to chat metadata + local backup.
+- Diagnostics status is persisted on every parse path, so “Ещё не проверялось” no longer survives after an actual check.

@@ -218,6 +218,25 @@ async function saveState(){
   await refreshPrompt();
 }
 
+// Parser-safe persistence: persist the exact object that was just parsed/applied.
+// Do NOT call getState() here: timestamp arbitration between chatMetadata and the
+// local backup can otherwise resurrect an older snapshot and silently discard
+// the packet that was just applied.
+async function persistExactState(s){
+  if(!s || typeof s!=='object') return;
+  const c=ctx();
+  s.updatedAt=now();
+  compactHistory(s);
+  try{
+    if(c?.chatMetadata && typeof c.chatMetadata==='object') c.chatMetadata[META_KEY]=s;
+  }catch(e){ console.warn('[HeartPulse] exact metadata write failed',e); }
+  writeBackup(s);
+  if(c){
+    try{ await c.saveMetadata?.(); }catch(e){ console.warn('[HeartPulse] exact metadata save failed; backup kept',e); }
+  }
+  try{ await refreshPrompt(); }catch(e){ console.warn('[HeartPulse] prompt refresh after exact save failed',e); }
+}
+
 function currentCharName(){
   const c=ctx(); if(!c) return '{{char}}';
   if(c.groupId) return 'Group / NPC';
@@ -378,8 +397,8 @@ function mergeNpcList(s,incoming){
   for(const n of incoming){ const key=String(n?.name||'').trim().toLowerCase(); if(!key) continue; map.set(key,normalizeNpc(n,map.get(key))); }
   s.npc=[...map.values()].sort((a,b)=>(b.lastSeen||0)-(a.lastSeen||0));
 }
-function applyStatePacket(packet){
-  const s=getState();
+function applyStatePacketToState(s,packet){
+  if(!s || typeof s!=='object') return;
   if(packet.label) s.relationLabel=String(packet.label).slice(0,100);
   if(packet.shift) s.lastShift=String(packet.shift).slice(0,300);
   if(Array.isArray(packet.active)) s.activeFeelings=[...new Set(packet.active.filter(k=>REL_LABEL[k]))].slice(0,6);
@@ -473,25 +492,63 @@ function findHeartPulsePacket(text){
 }
 async function parseLatestModelState(reason='event'){
   const c=ctx(); if(!c?.chat) return false;
-  const s=getState(), d=s.diagnostics||{};
-  const indexed=[...c.chat].map((m,i)=>({m,i})).reverse().find(x=>x.m&&!x.m.is_user&&typeof x.m.mes==='string');
+  const s=getState();
+  s.diagnostics=Object.assign({},defaults().diagnostics,s.diagnostics||{});
+  const d=s.diagnostics;
   d.lastParseAt=now();
-  if(!indexed){ d.lastParseStatus='Нет ответа ассистента для проверки'; writeBackup(s); return false; }
-  const {m:last,i:index}=indexed; d.lastAssistantIndex=index;
+
+  const indexed=[...c.chat].map((m,i)=>({m,i})).reverse().find(x=>x.m&&!x.m.is_user&&typeof x.m.mes==='string');
+  if(!indexed){
+    d.lastParseStatus='Нет ответа ассистента для проверки';
+    d.lastParseError='';
+    await persistExactState(s);
+    renderModelPreview();
+    return false;
+  }
+
+  const {m:last,i:index}=indexed;
+  d.lastAssistantIndex=index;
   const found=findHeartPulsePacket(last.m);
   if(!found || !found.packet){
-    if(d.lastAppliedAssistantIndex===index && String(d.lastParseStatus||'').includes('применён')) return true;
+    if(d.lastAppliedAssistantIndex===index && String(d.lastParseStatus||'').includes('применён')){
+      await persistExactState(s);
+      return true;
+    }
     d.lastParseStatus=`Пакет не найден (${reason})`;
-    d.lastParseError=found && !found.packet ? 'Маркер найден, но JSON не разобран' : '';
-    d.lastPacketSource=''; writeBackup(s); renderModelPreview(); return false;
+    d.lastParseError=found && !found.packet ? 'Маркер/JSON найден, но пакет не удалось разобрать' : 'В последнем ответе не найден HeartPulse-пакет';
+    d.lastPacketSource='';
+    await persistExactState(s);
+    renderModelPreview();
+    return false;
   }
+
   try{
-    applyStatePacket(found.packet);
-    const s2=getState(); s2.diagnostics.lastParseAt=now(); s2.diagnostics.lastParseStatus='Пакет найден и применён ✓'; s2.diagnostics.lastParseError=''; s2.diagnostics.lastPacketSource=found.source; s2.diagnostics.lastAssistantIndex=index; s2.diagnostics.lastAppliedAssistantIndex=index;
+    // Critical: apply to THIS exact state object. Older versions called getState()
+    // again here, allowing the local-backup timestamp arbitration to overwrite the
+    // newly parsed values before they were persisted.
+    applyStatePacketToState(s,found.packet);
+    d.lastParseAt=now();
+    d.lastParseStatus='Пакет найден и применён ✓';
+    d.lastParseError='';
+    d.lastPacketSource=found.source;
+    d.lastAssistantIndex=index;
+    d.lastAppliedAssistantIndex=index;
+
+    // Strip only the HeartPulse service payload from the stored assistant message.
     last.m=(last.m.slice(0,found.start)+last.m.slice(found.end)).trimEnd();
-    await c.saveChat?.(); await saveState(); if(getState().lastShift) toast(getState().lastShift,'success'); render(); return true;
+    try{ await c.saveChat?.(); }catch(e){ console.warn('[HeartPulse] chat cleanup save failed',e); }
+    await persistExactState(s);
+    if(s.lastShift) toast(s.lastShift,'success');
+    render();
+    return true;
   }catch(e){
-    const s3=getState(); s3.diagnostics.lastParseStatus='Ошибка разбора пакета'; s3.diagnostics.lastParseError=String(e?.message||e); writeBackup(s3); console.warn('[HeartPulse] state packet parse failed',e); renderModelPreview(); return false;
+    d.lastParseStatus='Ошибка применения пакета';
+    d.lastParseError=String(e?.message||e);
+    d.lastPacketSource=found?.source||'';
+    await persistExactState(s);
+    console.warn('[HeartPulse] state packet apply failed',e);
+    renderModelPreview();
+    return false;
   }
 }
 
@@ -504,7 +561,7 @@ function panelHtml(){
   const innerField=(key,label,placeholder)=>`<div class="hp-inner-field"><div class="hp-inner-title"><b>${label}</b><label class="hp-lock-toggle" title="Зафиксировать поле: модель перестанет менять его автоматически"><input type="checkbox" data-inner-lock="${key}" ${s.innerLocks?.[key]?'checked':''}><span>🔒</span></label></div><textarea class="hp-text hp-inner-text" data-inner="${key}" placeholder="${esc(placeholder)}">${esc(s.inner?.[key]||'')}</textarea></div>`;
   const scan=(s.lastCardScan||[]);
   return `<div id="hpOverlay" class="hp-overlay hp-hidden"><div id="hpPanel" class="hp-panel">
-    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.9.4</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
+    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.9.5</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
     <nav class="hp-tabs">${tabBtn('pulse','💗 Пульс')}${tabBtn('spark','❤️‍🔥 Искра')}${tabBtn('intent','🎯 Намерения')}${tabBtn('npc','👥 NPC')}${tabBtn('journal','📜 Журнал')}${tabBtn('model','👁 Модель')}</nav>
     <main class="hp-body">
       ${page('pulse',`<div class="hp-soft-card"><h3>💞 Эмоциональный пульс</h3><div class="hp-auto-status ${s.autoTrack?'on':''}">${s.autoTrack?'🤖 HeartPulse хранит полную палитру чувств, а здесь показывает только 1–6 самых актуальных сейчас.':'🖐️ Авто-динамика выключена: данные меняешь ты.'}</div><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: взаимное движение навстречу"><div class="hp-actions"><button id="hpRecalibrate">${s.recalibrationRequested?'⏳ Переоценка — со следующим ответом':'🧭 Переоценить отношения'}</button></div><p class="hp-muted hp-micro">Внутри движка остаются все чувства 0–200. На экран выводятся только 1–6 чувств, которые сейчас реально важны.</p><div class="hp-rel-grid hp-rel-active">${visibleFeelingKeys(s).map(k=>`<label>${esc(REL_LABEL[k]||k)}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div>${s.feelingNote?`<div class="hp-feeling-note">💭 ${esc(s.feelingNote)}</div>`:''}${s.lastShift?`<div class="hp-shift">✨ Последний сдвиг: ${esc(s.lastShift)}</div>`:''}<details id="hpAllFeelings" class="hp-extra-feelings"><summary>🧠 Вся внутренняя палитра (${REL_FIELDS.length})</summary><p class="hp-muted hp-micro">Это скрытый движок. Обычно сюда заходить не нужно; можно раскрыть для ручной правки.</p><div class="hp-rel-grid">${REL_FIELDS.map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div></details><div class="hp-inner-mini"><h4>🧠 Что сейчас внутри</h4>${innerField('mood','Настроение','Например: спокойная решимость, тревога, азарт...')}${innerField('motives','Мотивы','Почему персонаж сейчас действует именно так...')}</div><p class="hp-muted hp-tip">Модель сама решает, какие чувства сейчас активны. Если обида, страсть, ревность, дружба или другое состояние действительно стали важны — оно появится в верхних 1–6 ползунках.</p></div>`)}
@@ -781,7 +838,7 @@ function init(){
   safeOn(event_types.MESSAGE_RECEIVED,()=>{ [80,350,900].forEach(ms=>setTimeout(()=>parseLatestModelState('MESSAGE_RECEIVED'),ms)); });
   safeOn(event_types.GENERATION_ENDED,async()=>{ await parseLatestModelState('GENERATION_ENDED'); setTimeout(()=>parseLatestModelState('GENERATION_ENDED+500ms'),500); const s=getState();if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();}await refreshPrompt({includeAutoSpark:false});});
   setInterval(()=>{ ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); syncSettingsEntry(); },1800);
-  console.log('[HeartPulse] v0.9.4 ready');
+  console.log('[HeartPulse] v0.9.5 ready');
   return true;
 }
 
