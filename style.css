@@ -256,3 +256,16 @@
 .hp-diagnostics{display:grid;gap:5px;margin:0 0 9px;padding:9px 10px;border-radius:11px;border:1px solid rgba(92,206,187,.23);background:rgba(92,206,187,.055);font-size:11px;line-height:1.3;color:#cdebe5}
 .hp-diagnostics b{color:#e8fff8}
 .hp-diagnostics .hp-diag-error{color:#ffaaa4}
+
+/* v0.9.9.2 — compact manual NPC editor */
+.hp-npc-form{display:grid;gap:8px;margin:12px 0 16px;padding:12px;border:1px solid rgba(140,190,255,.15);border-radius:14px;background:rgba(72,104,145,.06)}
+.hp-npc-form .hp-text{min-height:68px!important;margin:0}
+.hp-npc-form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.hp-npc-rel-edit{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.hp-npc-rel-edit label{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 8px;border-radius:10px;background:rgba(255,255,255,.035);font-size:12px;color:#cfc4d3}
+.hp-npc-rel-edit .hp-mini-input{width:58px}
+.hp-npc-list{display:grid;gap:8px}
+.hp-npc-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.hp-npc-head>div{display:flex;gap:6px}
+.hp-npc-head button{border:1px solid rgba(255,255,255,.12);border-radius:9px;background:rgba(255,255,255,.04);color:#eee;padding:5px 7px}
+@media(max-width:520px){.hp-npc-form-grid,.hp-npc-rel-edit{grid-template-columns:1fr 1fr}}
