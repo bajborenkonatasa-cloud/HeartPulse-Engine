@@ -1,3 +1,10 @@
+# v0.9.9.5 — rendered-message fallback
+
+- Adds a MutationObserver fallback for HeartPulse packets that reach rendered `.mes_text` but are missing from the event-time chat object.
+- Manual diagnostics also checks the rendered message.
+- Raw service packet is removed from the visible message immediately after a successful DOM parse.
+- UI, manifest and console version are synchronized to 0.9.9.5.
+
 # HeartPulse Engine v0.4.0
 
 Clean UI rebuild for SillyTavern. The opening mechanism now follows the same direct module-import and DOM show/hide pattern used by working SillyTavern extensions.

@@ -552,47 +552,89 @@ async function parseModelStateAtIndex(index,reason='event'){
 }
 
 
-
-function removePacketFromRenderedHost(host, found){
+// v0.9.9.5: last-resort DOM transport recovery. Some SillyTavern render paths
+// expose the packet in .mes_text even when ctx().chat already contains a transformed copy.
+let __hpDomBusy=false;
+async function parseRenderedHeartPulsePackets(reason='DOM fallback'){
+  if(__hpDomBusy) return false;
+  __hpDomBusy=true;
   try{
-    const walker=document.createTreeWalker(host,NodeFilter.SHOW_TEXT);
-    const nodes=[]; let full='';
-    while(walker.nextNode()){ const n=walker.currentNode; nodes.push({n,start:full.length,end:full.length+(n.nodeValue||'').length}); full+=n.nodeValue||''; }
-    const a=nodes.find(x=>found.start>=x.start && found.start<=x.end);
-    const b=nodes.find(x=>found.end>=x.start && found.end<=x.end) || nodes.find(x=>found.end-1>=x.start && found.end-1<x.end);
-    if(!a||!b) return false;
-    const range=document.createRange();
-    range.setStart(a.n,Math.max(0,found.start-a.start));
-    range.setEnd(b.n,Math.max(0,Math.min((b.n.nodeValue||'').length,found.end-b.start)));
-    range.deleteContents();
-    host.normalize();
-    return true;
-  }catch(e){ console.warn('[HeartPulse] rendered cleanup failed',e); return false; }
+    const nodes=[...document.querySelectorAll('.mes_text')].reverse();
+    for(const el of nodes){
+      const visible=el.innerText || el.textContent || '';
+      if(!visible.includes('[[HEARTPULSE_STATE]]')) continue;
+      let found=null;
+      try{ found=findHeartPulsePacket(visible); }catch(e){ console.warn('[HeartPulse] DOM parser failed',e); }
+      if(!found?.packet) continue;
+
+      const c=ctx(), s=getState();
+      s.diagnostics=Object.assign({},defaults().diagnostics,s.diagnostics||{});
+      applyStatePacketToState(s,found.packet);
+      s.diagnostics.lastParseAt=now();
+      s.diagnostics.lastParseStatus='Пакет найден и применён ✓ (DOM fallback)';
+      s.diagnostics.lastParseError='';
+      s.diagnostics.lastPacketSource='rendered-message-fallback';
+
+      // Prefer the message index carried by SillyTavern's rendered .mes wrapper.
+      const wrapper=el.closest('.mes');
+      const rawId=wrapper?.getAttribute('mesid') ?? wrapper?.dataset?.mesid;
+      let idx=Number(rawId);
+      if(!Number.isInteger(idx) || !c?.chat?.[idx] || c.chat[idx].is_user){
+        idx=c?.chat ? [...c.chat].map((m,i)=>({m,i})).reverse().find(x=>x.m&&!x.m.is_user)?.i : -1;
+      }
+      if(Number.isInteger(idx) && idx>=0 && c?.chat?.[idx]){
+        const msg=c.chat[idx];
+        const inStored=findHeartPulsePacket(msg.mes||'');
+        if(inStored) msg.mes=(msg.mes.slice(0,inStored.start)+msg.mes.slice(inStored.end)).trimEnd();
+        s.diagnostics.lastAssistantIndex=idx;
+        s.diagnostics.lastAppliedAssistantIndex=idx;
+        try{ await c.saveChat?.(); }catch(e){ console.warn('[HeartPulse] DOM cleanup save failed',e); }
+      }
+
+      // Hide the raw packet immediately without rebuilding the whole message HTML.
+      // A refresh will use the cleaned chat copy when the packet was also present there.
+      try{
+        const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
+        const texts=[]; let n; while((n=walker.nextNode())) texts.push(n);
+        const full=texts.map(x=>x.nodeValue||'').join('');
+        const a=full.lastIndexOf('[[HEARTPULSE_STATE]]');
+        if(a>=0){
+          const close='[[/HEARTPULSE_STATE]]';
+          let b=full.indexOf(close,a);
+          if(b>=0) b+=close.length; else {
+            const bal=extractBalancedJson(full,a+'[[HEARTPULSE_STATE]]'.length);
+            if(bal) b=bal.end;
+          }
+          if(b>a){
+            let pos=0,startNode=null,endNode=null,startOff=0,endOff=0;
+            for(const t of texts){ const len=(t.nodeValue||'').length;
+              if(!startNode && a>=pos && a<=pos+len){startNode=t;startOff=a-pos;}
+              if(b>=pos && b<=pos+len){endNode=t;endOff=b-pos;break;}
+              pos+=len;
+            }
+            if(startNode&&endNode){ const r=document.createRange(); r.setStart(startNode,startOff); r.setEnd(endNode,endOff); r.deleteContents(); }
+          }
+        }
+      }catch(e){ console.warn('[HeartPulse] DOM visual cleanup failed',e); }
+
+      await persistExactState(s);
+      if(s.lastShift) toast(s.lastShift,'success');
+      render();
+      return true;
+    }
+    return false;
+  } finally { __hpDomBusy=false; }
 }
 
-async function parseRenderedModelState(reason='rendered fallback'){
-  const hosts=[...document.querySelectorAll('.mes_text')].reverse();
-  for(const host of hosts){
-    const mes=host.closest('.mes');
-    if(mes?.classList?.contains('user_mes') || mes?.getAttribute?.('is_user')==='true') continue;
-    const text=host.textContent||'';
-    let found=null; try{ found=findHeartPulsePacket(text); }catch{}
-    if(!found?.packet) continue;
-    const s=getState(); s.diagnostics=Object.assign({},defaults().diagnostics,s.diagnostics||{}); const d=s.diagnostics;
-    const fingerprint=String(found.raw||'').slice(0,2000);
-    if(d.lastRenderedPacketFingerprint===fingerprint){ removePacketFromRenderedHost(host,found); return true; }
-    try{
-      applyStatePacketToState(s,found.packet);
-      d.lastParseAt=now(); d.lastParseStatus=`Пакет найден и применён ✓ (${reason})`; d.lastParseError='';
-      d.lastPacketSource=`${found.source} · rendered-fallback`; d.lastRenderedPacketFingerprint=fingerprint;
-      removePacketFromRenderedHost(host,found);
-      await persistExactState(s); if(s.lastShift) toast(s.lastShift,'success'); render(); return true;
-    }catch(e){
-      d.lastParseAt=now(); d.lastParseStatus='Пакет в сообщении найден, но применение завершилось ошибкой'; d.lastParseError=String(e?.message||e); d.lastPacketSource='rendered-fallback-error';
-      await persistExactState(s); renderModelPreview(); return false;
-    }
-  }
-  return false;
+let __hpDomObserver=null;
+function ensureHeartPulseDomObserver(){
+  if(__hpDomObserver || !document.body) return;
+  let timer=0;
+  __hpDomObserver=new MutationObserver(()=>{
+    clearTimeout(timer);
+    timer=setTimeout(()=>parseRenderedHeartPulsePackets('MutationObserver'),80);
+  });
+  __hpDomObserver.observe(document.body,{childList:true,subtree:true,characterData:true});
 }
 
 async function parseLatestModelState(reason='event'){
@@ -603,9 +645,7 @@ async function parseLatestModelState(reason='event'){
     s.diagnostics.lastParseAt=now(); s.diagnostics.lastParseStatus='Нет ответа ассистента для проверки'; s.diagnostics.lastParseError='';
     await persistExactState(s); renderModelPreview(); return false;
   }
-  const ok=await parseModelStateAtIndex(indexed.i,reason);
-  if(ok) return true;
-  return parseRenderedModelState(`${reason} · DOM`);
+  return parseModelStateAtIndex(indexed.i,reason);
 }
 
 function panelHtml(){
@@ -627,7 +667,7 @@ function panelHtml(){
   }
   const journalHtml=journalGroups.map(g=>`<div class="hp-journal-group"><div class="hp-journal-day">${esc(g.day)}</div>${g.items.map(j=>`<div class="hp-log" data-journal-index="${j._index}"><div class="hp-log-top"><label class="hp-log-select"><input type="checkbox" data-journal-select="${j._index}"></label><time>${new Date(j.ts).toLocaleTimeString()}</time><div class="hp-log-actions"><button type="button" data-journal-edit="${j._index}" title="Редактировать">✏️</button><button type="button" data-journal-del="${j._index}" title="Удалить">🗑</button></div></div><span>${esc(j.text)}</span>${j.type==='done'?`<button class="hp-restore-goal" data-restore-journal="${j._index}">↩ Вернуть цель</button>`:''}</div>`).join('')}</div>`).join('');
   return `<div id="hpOverlay" class="hp-overlay hp-hidden"><div id="hpPanel" class="hp-panel">
-    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.9.9.3</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
+    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.9.9.5</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
     <nav class="hp-tabs">${tabBtn('pulse','💗 Пульс')}${tabBtn('spark','❤️‍🔥 Искра')}${tabBtn('intent','🎯 Намерения')}${tabBtn('npc','👥 NPC')}${tabBtn('journal','📜 Журнал')}${tabBtn('model','👁 Модель')}</nav>
     <main class="hp-body">
       ${page('pulse',`<div class="hp-soft-card"><h3>💞 Эмоциональный пульс</h3><div class="hp-auto-status ${s.autoTrack?'on':''}">${s.autoTrack?'🤖 HeartPulse хранит полную палитру чувств, а здесь показывает только 1–6 самых актуальных сейчас.':'🖐️ Авто-динамика выключена: данные меняешь ты.'}</div><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: взаимное движение навстречу"><div class="hp-actions"><button id="hpRecalibrate">${s.recalibrationRequested?'⏳ Переоценка — со следующим ответом':'🧭 Переоценить отношения'}</button></div><p class="hp-muted hp-micro">Внутри движка остаются все чувства 0–200. На экран выводятся только 1–6 чувств, которые сейчас реально важны.</p><div class="hp-rel-grid hp-rel-active">${visibleFeelingKeys(s).map(k=>`<label>${esc(REL_LABEL[k]||k)}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div>${s.feelingNote?`<div class="hp-feeling-note">💭 ${esc(s.feelingNote)}</div>`:''}${s.lastShift?`<div class="hp-shift">✨ Последний сдвиг: ${esc(s.lastShift)}</div>`:''}<details id="hpAllFeelings" class="hp-extra-feelings"><summary>🧠 Вся внутренняя палитра (${REL_FIELDS.length})</summary><p class="hp-muted hp-micro">Это скрытый движок. Обычно сюда заходить не нужно; можно раскрыть для ручной правки.</p><div class="hp-rel-grid">${REL_FIELDS.map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div></details><div class="hp-inner-mini"><h4>🧠 Что сейчас внутри</h4>${innerField('mood','Настроение','Например: спокойная решимость, тревога, азарт...')}${innerField('motives','Мотивы','Почему персонаж сейчас действует именно так...')}</div><p class="hp-muted hp-tip">Модель сама решает, какие чувства сейчас активны. Если обида, страсть, ревность, дружба или другое состояние действительно стали важны — оно появится в верхних 1–6 ползунках.</p></div>`)}
@@ -762,7 +802,7 @@ function bind(){
   [['#hpEnabled','enabled'],['#hpAutoTrack','autoTrack'],['#hpInjectRel','injectRelation'],['#hpInjectKinks','injectKinks'],['#hpInjectIntent','injectIntentions']].forEach(([id,key])=>q(id)?.addEventListener('change',async e=>{getState()[key]=e.target.checked; await saveState(); renderModelPreview();}));
   q('#hpManual')?.addEventListener('change',async e=>{getState().manualDirective=e.target.value; await saveState();});
   q('#hpOneShot')?.addEventListener('change',async e=>{getState().oneShotDirective=e.target.value; await saveState();});
-  q('#hpDiagParse')?.addEventListener('click',async()=>{ const ok=await parseLatestModelState('ручная проверка'); toast(ok?'Пакет найден и применён':'Пакет HeartPulse в последнем ответе не найден', ok?'success':'info'); render(); });
+  q('#hpDiagParse')?.addEventListener('click',async()=>{ let ok=await parseLatestModelState('ручная проверка'); if(!ok) ok=await parseRenderedHeartPulsePackets('ручная DOM-проверка'); toast(ok?'Пакет найден и применён':'Пакет HeartPulse в последнем ответе не найден', ok?'success':'info'); render(); });
   q('#hpShowFab')?.addEventListener('change',e=>{ const ui=readUi(); ui.showFab=e.target.checked; saveUi(ui); syncFabVisibility(); syncSettingsEntry(); });
 }
 
@@ -912,6 +952,7 @@ function init(){
   ensureSettingsEntry();
   registerWandMenuItem();
   ensurePanel();
+  ensureHeartPulseDomObserver();
   try{ refreshPrompt(); }catch(e){ console.error('[HeartPulse] initial prompt failed',e); }
   if(__hpInitialized) return true;
   __hpInitialized=true;
@@ -920,9 +961,9 @@ function init(){
   safeOn(event_types.CHARACTER_EDITED,()=>refreshPrompt());
   safeOn(event_types.GENERATION_STARTED,()=>refreshPrompt({includeAutoSpark:true}));
   safeOn(event_types.MESSAGE_RECEIVED,(messageId)=>{ parseModelStateAtIndex(messageId,'MESSAGE_RECEIVED exact'); [120,420].forEach(ms=>setTimeout(()=>parseModelStateAtIndex(messageId,'MESSAGE_RECEIVED retry'),ms)); });
-  safeOn(event_types.GENERATION_ENDED,async()=>{ await parseLatestModelState('GENERATION_ENDED'); setTimeout(()=>parseLatestModelState('GENERATION_ENDED+500ms'),500); setTimeout(()=>parseRenderedModelState('post-render safety'),900); const s=getState();if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();}await refreshPrompt({includeAutoSpark:false});});
+  safeOn(event_types.GENERATION_ENDED,async()=>{ await parseLatestModelState('GENERATION_ENDED'); setTimeout(()=>parseLatestModelState('GENERATION_ENDED+500ms'),500); const s=getState();if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();}await refreshPrompt({includeAutoSpark:false});});
   setInterval(()=>{ ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); syncSettingsEntry(); },1800);
-  console.log('[HeartPulse] v0.9.9.4 rendered-packet fallback ready');
+  console.log('[HeartPulse] v0.9.9.5 DOM packet fallback ready');
   return true;
 }
 
