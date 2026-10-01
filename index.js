@@ -551,6 +551,50 @@ async function parseModelStateAtIndex(index,reason='event'){
   }
 }
 
+
+
+function removePacketFromRenderedHost(host, found){
+  try{
+    const walker=document.createTreeWalker(host,NodeFilter.SHOW_TEXT);
+    const nodes=[]; let full='';
+    while(walker.nextNode()){ const n=walker.currentNode; nodes.push({n,start:full.length,end:full.length+(n.nodeValue||'').length}); full+=n.nodeValue||''; }
+    const a=nodes.find(x=>found.start>=x.start && found.start<=x.end);
+    const b=nodes.find(x=>found.end>=x.start && found.end<=x.end) || nodes.find(x=>found.end-1>=x.start && found.end-1<x.end);
+    if(!a||!b) return false;
+    const range=document.createRange();
+    range.setStart(a.n,Math.max(0,found.start-a.start));
+    range.setEnd(b.n,Math.max(0,Math.min((b.n.nodeValue||'').length,found.end-b.start)));
+    range.deleteContents();
+    host.normalize();
+    return true;
+  }catch(e){ console.warn('[HeartPulse] rendered cleanup failed',e); return false; }
+}
+
+async function parseRenderedModelState(reason='rendered fallback'){
+  const hosts=[...document.querySelectorAll('.mes_text')].reverse();
+  for(const host of hosts){
+    const mes=host.closest('.mes');
+    if(mes?.classList?.contains('user_mes') || mes?.getAttribute?.('is_user')==='true') continue;
+    const text=host.textContent||'';
+    let found=null; try{ found=findHeartPulsePacket(text); }catch{}
+    if(!found?.packet) continue;
+    const s=getState(); s.diagnostics=Object.assign({},defaults().diagnostics,s.diagnostics||{}); const d=s.diagnostics;
+    const fingerprint=String(found.raw||'').slice(0,2000);
+    if(d.lastRenderedPacketFingerprint===fingerprint){ removePacketFromRenderedHost(host,found); return true; }
+    try{
+      applyStatePacketToState(s,found.packet);
+      d.lastParseAt=now(); d.lastParseStatus=`Пакет найден и применён ✓ (${reason})`; d.lastParseError='';
+      d.lastPacketSource=`${found.source} · rendered-fallback`; d.lastRenderedPacketFingerprint=fingerprint;
+      removePacketFromRenderedHost(host,found);
+      await persistExactState(s); if(s.lastShift) toast(s.lastShift,'success'); render(); return true;
+    }catch(e){
+      d.lastParseAt=now(); d.lastParseStatus='Пакет в сообщении найден, но применение завершилось ошибкой'; d.lastParseError=String(e?.message||e); d.lastPacketSource='rendered-fallback-error';
+      await persistExactState(s); renderModelPreview(); return false;
+    }
+  }
+  return false;
+}
+
 async function parseLatestModelState(reason='event'){
   const c=ctx(); if(!c?.chat) return false;
   const indexed=[...c.chat].map((m,i)=>({m,i})).reverse().find(x=>x.m&&!x.m.is_user&&typeof x.m.mes==='string');
@@ -559,7 +603,9 @@ async function parseLatestModelState(reason='event'){
     s.diagnostics.lastParseAt=now(); s.diagnostics.lastParseStatus='Нет ответа ассистента для проверки'; s.diagnostics.lastParseError='';
     await persistExactState(s); renderModelPreview(); return false;
   }
-  return parseModelStateAtIndex(indexed.i,reason);
+  const ok=await parseModelStateAtIndex(indexed.i,reason);
+  if(ok) return true;
+  return parseRenderedModelState(`${reason} · DOM`);
 }
 
 function panelHtml(){
@@ -874,9 +920,9 @@ function init(){
   safeOn(event_types.CHARACTER_EDITED,()=>refreshPrompt());
   safeOn(event_types.GENERATION_STARTED,()=>refreshPrompt({includeAutoSpark:true}));
   safeOn(event_types.MESSAGE_RECEIVED,(messageId)=>{ parseModelStateAtIndex(messageId,'MESSAGE_RECEIVED exact'); [120,420].forEach(ms=>setTimeout(()=>parseModelStateAtIndex(messageId,'MESSAGE_RECEIVED retry'),ms)); });
-  safeOn(event_types.GENERATION_ENDED,async()=>{ await parseLatestModelState('GENERATION_ENDED'); setTimeout(()=>parseLatestModelState('GENERATION_ENDED+500ms'),500); const s=getState();if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();}await refreshPrompt({includeAutoSpark:false});});
+  safeOn(event_types.GENERATION_ENDED,async()=>{ await parseLatestModelState('GENERATION_ENDED'); setTimeout(()=>parseLatestModelState('GENERATION_ENDED+500ms'),500); setTimeout(()=>parseRenderedModelState('post-render safety'),900); const s=getState();if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();}await refreshPrompt({includeAutoSpark:false});});
   setInterval(()=>{ ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); syncSettingsEntry(); },1800);
-  console.log('[HeartPulse] v0.9.9 ready');
+  console.log('[HeartPulse] v0.9.9.4 rendered-packet fallback ready');
   return true;
 }
 
