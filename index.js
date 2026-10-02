@@ -476,6 +476,16 @@ function findHeartPulsePacket(text){
       if(packet) return {packet,source:'tagged-service-packet',start:pos,end:closePos+close.length,raw:json};
       return {packet:null,source:'tagged-service-packet-invalid',start:pos,end:closePos+close.length,raw:json};
     }
+
+    // v0.9.9.6 recovery: some models occasionally omit the closing boundary even
+    // though the JSON itself is complete. Recover the balanced object and treat
+    // the end of that object as the service-packet boundary.
+    const bal=extractBalancedJson(text,bodyStart);
+    if(bal){
+      const packet=safeParse(bal.json);
+      if(packet) return {packet,source:'tagged-service-packet-unclosed-recovery',start:pos,end:bal.end,raw:bal.json};
+      return {packet:null,source:'tagged-service-packet-unclosed-invalid',start:pos,end:bal.end,raw:bal.json};
+    }
   }
 
   // Legacy fallback: older chats may still contain the original HTML-comment packet.
@@ -569,19 +579,27 @@ async function parseRenderedHeartPulsePackets(reason='DOM fallback'){
 
       const c=ctx(), s=getState();
       s.diagnostics=Object.assign({},defaults().diagnostics,s.diagnostics||{});
-      applyStatePacketToState(s,found.packet);
-      s.diagnostics.lastParseAt=now();
-      s.diagnostics.lastParseStatus='Пакет найден и применён ✓ (DOM fallback)';
-      s.diagnostics.lastParseError='';
-      s.diagnostics.lastPacketSource='rendered-message-fallback';
 
       // Prefer the message index carried by SillyTavern's rendered .mes wrapper.
+      // Resolve it BEFORE applying state so the DOM fallback can be idempotent.
       const wrapper=el.closest('.mes');
       const rawId=wrapper?.getAttribute('mesid') ?? wrapper?.dataset?.mesid;
       let idx=Number(rawId);
       if(!Number.isInteger(idx) || !c?.chat?.[idx] || c.chat[idx].is_user){
         idx=c?.chat ? [...c.chat].map((m,i)=>({m,i})).reverse().find(x=>x.m&&!x.m.is_user)?.i : -1;
       }
+
+      const alreadyApplied=Number.isInteger(idx) && idx>=0 && s.diagnostics.lastAppliedAssistantIndex===idx;
+      if(!alreadyApplied){
+        applyStatePacketToState(s,found.packet);
+        s.diagnostics.lastParseStatus='Пакет найден и применён ✓ (DOM fallback)';
+      } else {
+        s.diagnostics.lastParseStatus='Пакет уже применён; выполнена только очистка ✓';
+      }
+      s.diagnostics.lastParseAt=now();
+      s.diagnostics.lastParseError='';
+      s.diagnostics.lastPacketSource=found.source==='tagged-service-packet-unclosed-recovery'?'rendered-message-unclosed-recovery':'rendered-message-fallback';
+
       if(Number.isInteger(idx) && idx>=0 && c?.chat?.[idx]){
         const msg=c.chat[idx];
         const inStored=findHeartPulsePacket(msg.mes||'');
@@ -667,7 +685,7 @@ function panelHtml(){
   }
   const journalHtml=journalGroups.map(g=>`<div class="hp-journal-group"><div class="hp-journal-day">${esc(g.day)}</div>${g.items.map(j=>`<div class="hp-log" data-journal-index="${j._index}"><div class="hp-log-top"><label class="hp-log-select"><input type="checkbox" data-journal-select="${j._index}"></label><time>${new Date(j.ts).toLocaleTimeString()}</time><div class="hp-log-actions"><button type="button" data-journal-edit="${j._index}" title="Редактировать">✏️</button><button type="button" data-journal-del="${j._index}" title="Удалить">🗑</button></div></div><span>${esc(j.text)}</span>${j.type==='done'?`<button class="hp-restore-goal" data-restore-journal="${j._index}">↩ Вернуть цель</button>`:''}</div>`).join('')}</div>`).join('');
   return `<div id="hpOverlay" class="hp-overlay hp-hidden"><div id="hpPanel" class="hp-panel">
-    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.9.9.5</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
+    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.9.9.6</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
     <nav class="hp-tabs">${tabBtn('pulse','💗 Пульс')}${tabBtn('spark','❤️‍🔥 Искра')}${tabBtn('intent','🎯 Намерения')}${tabBtn('npc','👥 NPC')}${tabBtn('journal','📜 Журнал')}${tabBtn('model','👁 Модель')}</nav>
     <main class="hp-body">
       ${page('pulse',`<div class="hp-soft-card"><h3>💞 Эмоциональный пульс</h3><div class="hp-auto-status ${s.autoTrack?'on':''}">${s.autoTrack?'🤖 HeartPulse хранит полную палитру чувств, а здесь показывает только 1–6 самых актуальных сейчас.':'🖐️ Авто-динамика выключена: данные меняешь ты.'}</div><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: взаимное движение навстречу"><div class="hp-actions"><button id="hpRecalibrate">${s.recalibrationRequested?'⏳ Переоценка — со следующим ответом':'🧭 Переоценить отношения'}</button></div><p class="hp-muted hp-micro">Внутри движка остаются все чувства 0–200. На экран выводятся только 1–6 чувств, которые сейчас реально важны.</p><div class="hp-rel-grid hp-rel-active">${visibleFeelingKeys(s).map(k=>`<label>${esc(REL_LABEL[k]||k)}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div>${s.feelingNote?`<div class="hp-feeling-note">💭 ${esc(s.feelingNote)}</div>`:''}${s.lastShift?`<div class="hp-shift">✨ Последний сдвиг: ${esc(s.lastShift)}</div>`:''}<details id="hpAllFeelings" class="hp-extra-feelings"><summary>🧠 Вся внутренняя палитра (${REL_FIELDS.length})</summary><p class="hp-muted hp-micro">Это скрытый движок. Обычно сюда заходить не нужно; можно раскрыть для ручной правки.</p><div class="hp-rel-grid">${REL_FIELDS.map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div></details><div class="hp-inner-mini"><h4>🧠 Что сейчас внутри</h4>${innerField('mood','Настроение','Например: спокойная решимость, тревога, азарт...')}${innerField('motives','Мотивы','Почему персонаж сейчас действует именно так...')}</div><p class="hp-muted hp-tip">Модель сама решает, какие чувства сейчас активны. Если обида, страсть, ревность, дружба или другое состояние действительно стали важны — оно появится в верхних 1–6 ползунках.</p></div>`)}
@@ -963,7 +981,7 @@ function init(){
   safeOn(event_types.MESSAGE_RECEIVED,(messageId)=>{ parseModelStateAtIndex(messageId,'MESSAGE_RECEIVED exact'); [120,420].forEach(ms=>setTimeout(()=>parseModelStateAtIndex(messageId,'MESSAGE_RECEIVED retry'),ms)); });
   safeOn(event_types.GENERATION_ENDED,async()=>{ await parseLatestModelState('GENERATION_ENDED'); setTimeout(()=>parseLatestModelState('GENERATION_ENDED+500ms'),500); const s=getState();if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();}await refreshPrompt({includeAutoSpark:false});});
   setInterval(()=>{ ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); syncSettingsEntry(); },1800);
-  console.log('[HeartPulse] v0.9.9.5 DOM packet fallback ready');
+  console.log('[HeartPulse] v0.9.9.6 resilient packet cleanup ready');
   return true;
 }
 

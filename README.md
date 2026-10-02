@@ -1,3 +1,9 @@
+# v0.9.9.6 — resilient packet cleanup
+
+- Recovers complete `[[HEARTPULSE_STATE]]` JSON even when the model omits `[[/HEARTPULSE_STATE]]`.
+- DOM recovery is idempotent: if a message state was already applied, fallback only removes the visible service packet and never applies deltas twice.
+- Keeps the existing exact-message and rendered-message fallback paths.
+
 # v0.9.9.5 — rendered-message fallback
 
 - Adds a MutationObserver fallback for HeartPulse packets that reach rendered `.mes_text` but are missing from the event-time chat object.
