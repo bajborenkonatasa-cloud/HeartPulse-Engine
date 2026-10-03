@@ -486,6 +486,12 @@ function findHeartPulsePacket(text){
       if(packet) return {packet,source:'tagged-service-packet-unclosed-recovery',start:pos,end:bal.end,raw:bal.json};
       return {packet:null,source:'tagged-service-packet-unclosed-invalid',start:pos,end:bal.end,raw:bal.json};
     }
+
+    // v0.9.9.7 fail-safe: the model can be cut off mid service packet (for
+    // example by a token/transport stop). Never expose that private transport
+    // tail to the RP. It is intentionally NOT applied because the JSON is
+    // incomplete; the next complete model reply can update HeartPulse normally.
+    return {packet:null,source:'tagged-service-packet-truncated',start:pos,end:text.length,raw:text.slice(bodyStart)};
   }
 
   // Legacy fallback: older chats may still contain the original HTML-comment packet.
@@ -531,6 +537,18 @@ async function parseModelStateAtIndex(index,reason='event'){
     if(d.lastAppliedAssistantIndex===index && String(d.lastParseStatus||'').includes('применён')){
       await persistExactState(s); return true;
     }
+
+    // v0.9.9.7: a truncated service packet is disposable transport data.
+    // Remove it from the stored assistant message, but never apply partial state.
+    if(found?.source==='tagged-service-packet-truncated'){
+      last.mes=(last.mes.slice(0,found.start)+last.mes.slice(found.end)).trimEnd();
+      d.lastParseStatus='Оборванный служебный пакет скрыт ✓';
+      d.lastParseError='Неполный JSON не применялся к состоянию';
+      d.lastPacketSource=found.source;
+      try{ await c.saveChat?.(); }catch(e){ console.warn('[HeartPulse] truncated packet cleanup save failed',e); }
+      await persistExactState(s); renderModelPreview(); return true;
+    }
+
     d.lastParseStatus=`Пакет не найден (${reason})`;
     d.lastParseError=found && !found.packet ? 'Границы пакета найдены, но JSON не удалось разобрать' : 'В этом ответе не найден HeartPulse-пакет';
     d.lastPacketSource=found?.source||'';
@@ -575,9 +593,43 @@ async function parseRenderedHeartPulsePackets(reason='DOM fallback'){
       if(!visible.includes('[[HEARTPULSE_STATE]]')) continue;
       let found=null;
       try{ found=findHeartPulsePacket(visible); }catch(e){ console.warn('[HeartPulse] DOM parser failed',e); }
-      if(!found?.packet) continue;
+      if(!found) continue;
 
       const c=ctx(), s=getState();
+      // v0.9.9.7: if rendering already happened with a truncated packet, remove
+      // the raw tail immediately. Do not apply any partial HeartPulse state.
+      if(!found.packet && found.source==='tagged-service-packet-truncated'){
+        const wrapper=el.closest('.mes');
+        const rawId=wrapper?.getAttribute('mesid') ?? wrapper?.dataset?.mesid;
+        let idx=Number(rawId);
+        if(Number.isInteger(idx) && idx>=0 && c?.chat?.[idx] && !c.chat[idx].is_user){
+          const msg=c.chat[idx];
+          const stored=findHeartPulsePacket(msg.mes||'');
+          if(stored?.source==='tagged-service-packet-truncated'){
+            msg.mes=(msg.mes.slice(0,stored.start)+msg.mes.slice(stored.end)).trimEnd();
+            try{ await c.saveChat?.(); }catch(e){ console.warn('[HeartPulse] DOM truncated cleanup save failed',e); }
+          }
+        }
+        try{
+          const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
+          const texts=[]; let n; while((n=walker.nextNode())) texts.push(n);
+          const full=texts.map(x=>x.nodeValue||'').join('');
+          const a=full.lastIndexOf('[[HEARTPULSE_STATE]]');
+          if(a>=0){
+            let pos=0,startNode=null,startOff=0;
+            for(const t of texts){ const len=(t.nodeValue||'').length; if(a>=pos && a<=pos+len){startNode=t;startOff=a-pos;break;} pos+=len; }
+            if(startNode){ const r=document.createRange(); r.setStart(startNode,startOff); r.setEndAfter(el.lastChild); r.deleteContents(); }
+          }
+        }catch(e){ console.warn('[HeartPulse] DOM truncated visual cleanup failed',e); }
+        s.diagnostics=Object.assign({},defaults().diagnostics,s.diagnostics||{});
+        s.diagnostics.lastParseAt=now();
+        s.diagnostics.lastParseStatus='Оборванный служебный пакет скрыт ✓ (DOM)';
+        s.diagnostics.lastParseError='Неполный JSON не применялся к состоянию';
+        s.diagnostics.lastPacketSource=found.source;
+        await persistExactState(s); renderModelPreview();
+        return true;
+      }
+      if(!found.packet) continue;
       s.diagnostics=Object.assign({},defaults().diagnostics,s.diagnostics||{});
 
       // Prefer the message index carried by SillyTavern's rendered .mes wrapper.

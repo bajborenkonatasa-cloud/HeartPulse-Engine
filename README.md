@@ -1,3 +1,8 @@
+## v0.9.9.7
+- Hides truncated `[[HEARTPULSE_STATE]]` tails when generation stops mid-JSON.
+- Partial JSON is never applied to HeartPulse state.
+- Cleanup works in both stored-message and rendered-DOM paths.
+
 # v0.9.9.6 — resilient packet cleanup
 
 - Recovers complete `[[HEARTPULSE_STATE]]` JSON even when the model omits `[[/HEARTPULSE_STATE]]`.
