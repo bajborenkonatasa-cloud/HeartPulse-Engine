@@ -4,6 +4,8 @@ import { getContext } from '../../../extensions.js';
 const MODULE = 'heartpulse_engine';
 const PROMPT_ID = 'heartpulse_engine_context';
 const META_KEY = 'heartpulse_engine_state_v2';
+const CHECKPOINT_KEY = 'heartpulse_checkpoint_v1';
+
 const BACKUP_PREFIX = 'heartpulse_engine_backup_v2:';
 const UI_KEY = 'heartpulse_engine_ui_v6';
 const REL_MAX = 200;
@@ -168,6 +170,54 @@ function stateMerge(raw){
   if(typeof s.recalibrationRequested!=='boolean') s.recalibrationRequested=false;
   s.journalArchiveCount=Number(s.journalArchiveCount)||0;
   return s;
+}
+
+// Branch-safe checkpoints: every successfully applied HeartPulse packet stores
+// the resulting state on that exact assistant message. SillyTavern copies only
+// messages up to the fork point into a branch, so the branch carries the correct
+// HeartPulse snapshot instead of inheriting future state from chat metadata.
+function checkpointSnapshot(s){
+  const copy=stateMerge(JSON.parse(JSON.stringify(s||{})));
+  // Diagnostics describe parser activity, not roleplay state. Reset them so a
+  // restored branch cannot look as if a later message was already parsed there.
+  copy.diagnostics=Object.assign({},defaults().diagnostics);
+  copy.updatedAt=Number(s?.updatedAt)||now();
+  return copy;
+}
+
+function writeMessageCheckpoint(message,s){
+  if(!message || typeof message!=='object' || !s) return;
+  if(!message.extra || typeof message.extra!=='object') message.extra={};
+  message.extra[CHECKPOINT_KEY]=checkpointSnapshot(s);
+}
+
+function latestMessageCheckpoint(){
+  const c=ctx();
+  if(!Array.isArray(c?.chat)) return null;
+  for(let i=c.chat.length-1;i>=0;i--){
+    const m=c.chat[i];
+    const snap=m?.extra?.[CHECKPOINT_KEY];
+    if(snap && typeof snap==='object') return {index:i,state:stateMerge(JSON.parse(JSON.stringify(snap)))};
+  }
+  return null;
+}
+
+async function restoreCheckpointForCurrentChat(reason='chat changed'){
+  const hit=latestMessageCheckpoint();
+  if(!hit) return false; // Legacy chats keep their existing metadata until new checkpoints exist.
+  const restored=hit.state;
+  restored.updatedAt=now();
+  restored.diagnostics=Object.assign({},defaults().diagnostics,{
+    lastParseAt:now(),
+    lastParseStatus:`Состояние восстановлено из ветки ✓ (сообщение ${hit.index})`,
+    lastPacketSource:'message-checkpoint',
+    lastAssistantIndex:hit.index,
+    lastAppliedAssistantIndex:hit.index,
+  });
+  await persistExactState(restored);
+  try{ render(); }catch{}
+  console.log('[HeartPulse] branch checkpoint restored',reason,hit.index);
+  return true;
 }
 
 function compactHistory(s){
@@ -565,8 +615,12 @@ async function parseModelStateAtIndex(index,reason='event'){
     d.lastAppliedAssistantIndex=index;
 
     // Remove the service packet from the exact received message before normal render.
+    // Save the resulting HeartPulse state on THIS message before saving the chat.
+    // If the user later forks from an earlier message, only the checkpoint that
+    // existed at that fork point is copied into the new branch.
     last.mes=(last.mes.slice(0,found.start)+last.mes.slice(found.end)).trimEnd();
-    try{ await c.saveChat?.(); }catch(e){ console.warn('[HeartPulse] chat cleanup save failed',e); }
+    writeMessageCheckpoint(last,s);
+    try{ await c.saveChat?.(); }catch(e){ console.warn('[HeartPulse] chat cleanup/checkpoint save failed',e); }
     await persistExactState(s);
     if(s.lastShift) toast(s.lastShift,'success');
     render();
@@ -1027,13 +1081,13 @@ function init(){
   if(__hpInitialized) return true;
   __hpInitialized=true;
   window.addEventListener('resize',placeFab);
-  safeOn(event_types.CHAT_CHANGED,()=>setTimeout(()=>{ try{render();}catch{} ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); refreshPrompt(); },200));
+  safeOn(event_types.CHAT_CHANGED,()=>setTimeout(async()=>{ try{ await restoreCheckpointForCurrentChat('CHAT_CHANGED'); }catch(e){ console.warn('[HeartPulse] branch restore failed',e); } try{render();}catch{} ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); refreshPrompt(); },200));
   safeOn(event_types.CHARACTER_EDITED,()=>refreshPrompt());
   safeOn(event_types.GENERATION_STARTED,()=>refreshPrompt({includeAutoSpark:true}));
   safeOn(event_types.MESSAGE_RECEIVED,(messageId)=>{ parseModelStateAtIndex(messageId,'MESSAGE_RECEIVED exact'); [120,420].forEach(ms=>setTimeout(()=>parseModelStateAtIndex(messageId,'MESSAGE_RECEIVED retry'),ms)); });
   safeOn(event_types.GENERATION_ENDED,async()=>{ await parseLatestModelState('GENERATION_ENDED'); setTimeout(()=>parseLatestModelState('GENERATION_ENDED+500ms'),500); const s=getState();if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();}await refreshPrompt({includeAutoSpark:false});});
   setInterval(()=>{ ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); syncSettingsEntry(); },1800);
-  console.log('[HeartPulse] v0.9.9.6 resilient packet cleanup ready');
+  console.log('[HeartPulse] v0.9.9.8 branch-safe checkpoints ready');
   return true;
 }
 
