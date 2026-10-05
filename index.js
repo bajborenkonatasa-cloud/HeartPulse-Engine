@@ -246,6 +246,7 @@ function backupKey(){ return BACKUP_PREFIX + currentChatKey(); }
 // that same character. The roleplay state itself remains chat/branch scoped.
 const CUSTOM_KINKS_PREFIX='heartpulse_custom_kinks_v1:';
 const CUSTOM_KINKS_STABLE_PREFIX='heartpulse_custom_kinks_v2:';
+const CUSTOM_KINKS_GLOBAL_KEY='heartpulse_custom_kinks_global_v3';
 function currentCharacterKey(){
   const c=ctx();
   if(!c) return 'no-character';
@@ -278,18 +279,27 @@ function normalizeCustomKinks(list){
 }
 function readCharacterCustomKinks(){
   try{
-    const stable=normalizeCustomKinks(safeParse(localStorage.getItem(stableCustomKinksKey())||'')||[]);
-    const legacy=normalizeCustomKinks(safeParse(localStorage.getItem(customKinksKey())||'')||[]);
-    return mergeCustomKinks(legacy,stable);
-  }catch{return [];}
+    // v3: one user library for HeartPulse, shared by every character/chat.
+    // Also harvest every old v1/v2 bucket once, so entries made in previous
+    // builds are not stranded behind a chat/character-specific key.
+    let all=normalizeCustomKinks(safeParse(localStorage.getItem(CUSTOM_KINKS_GLOBAL_KEY)||'')||[]);
+    for(let i=0;i<localStorage.length;i++){
+      const key=localStorage.key(i)||'';
+      if(key.startsWith(CUSTOM_KINKS_PREFIX) || key.startsWith(CUSTOM_KINKS_STABLE_PREFIX)){
+        all=mergeCustomKinks(all, normalizeCustomKinks(safeParse(localStorage.getItem(key)||'')||[]));
+      }
+    }
+    if(all.length) localStorage.setItem(CUSTOM_KINKS_GLOBAL_KEY,JSON.stringify(all));
+    return all;
+  }catch(e){ console.warn('[HeartPulse] global custom kinks read failed',e); return []; }
 }
 function writeCharacterCustomKinks(list){
   const normalized=normalizeCustomKinks(list);
   try{
-    // v2 is the authoritative cross-chat store; legacy write is kept only for migration safety.
-    localStorage.setItem(stableCustomKinksKey(),JSON.stringify(normalized));
-    localStorage.setItem(customKinksKey(),JSON.stringify(normalized));
-  }catch(e){console.warn('[HeartPulse] character custom kinks backup failed',e);}
+    // Authoritative v3 store: fixed key, deliberately independent of chat,
+    // branch, characterId, avatar and character name.
+    localStorage.setItem(CUSTOM_KINKS_GLOBAL_KEY,JSON.stringify(normalized));
+  }catch(e){console.warn('[HeartPulse] global custom kinks backup failed',e);}
 }
 function mergeCustomKinks(chatList, characterList){
   const out=[], byName=new Map();
@@ -321,10 +331,10 @@ function getState(){
   if(!chosen && backup) chosen=backup;
   else if(chosen && backup && Number(backup.updatedAt||0) > Number(chosen.updatedAt||0)) chosen=backup;
   const s=stateMerge(chosen);
-  // Migrate/merge old chat-local custom entries into the persistent character library.
-  const characterCustom=readCharacterCustomKinks();
-  s.customKinks=mergeCustomKinks(s.customKinks,characterCustom);
-  writeCharacterCustomKinks(s.customKinks);
+  // v0.9.9.13: custom kinks are USER-GLOBAL data, never chat/branch state.
+  // A checkpoint or old chat snapshot may contain a stale customKinks array; ignore it.
+  // The fixed global store is the only authority shown in every character/chat.
+  s.customKinks=readCharacterCustomKinks();
   try{
     if(c?.chatMetadata && typeof c.chatMetadata === 'object') c.chatMetadata[META_KEY]=s;
   }catch(e){ console.warn('[HeartPulse] chatMetadata write failed; local backup will be used',e); }
@@ -335,7 +345,6 @@ async function saveState(){
   const c=ctx();
   const s=getState(); s.updatedAt=now();
   compactHistory(s);
-  writeCharacterCustomKinks(s.customKinks);
   writeBackup(s);
   if(c){
     try{ await c.saveMetadata?.(); }catch(e){ console.warn('[HeartPulse] metadata save failed; backup kept',e); }
@@ -352,7 +361,6 @@ async function persistExactState(s){
   const c=ctx();
   s.updatedAt=now();
   compactHistory(s);
-  writeCharacterCustomKinks(s.customKinks);
   try{
     if(c?.chatMetadata && typeof c.chatMetadata==='object') c.chatMetadata[META_KEY]=s;
   }catch(e){ console.warn('[HeartPulse] exact metadata write failed',e); }
@@ -870,7 +878,7 @@ function panelHtml(){
       <div class="hp-actions"><button id="hpScanCard">✨ Проверить карточку локально</button></div><p class="hp-muted">Без API и без отдельного запроса: HeartPulse читает текст карточки текущего персонажа и ищет известные признаки.</p>
       <div class="hp-scan-report"><b>🩺 Анамнез карточки</b>${s.lastCardScanAt?`<span class="hp-muted">Последняя проверка: ${new Date(s.lastCardScanAt).toLocaleTimeString()}</span>`:''}${scan.length?`<div class="hp-scan-chips">${scan.map(k=>`<span>${esc(kinkDisplay(s,k))}</span>`).join('')}</div>`:'<p class="hp-muted">Ещё не проверено или явных совпадений не найдено.</p>'}</div>
       <div class="hp-subtitle">Активно именно в этой сцене</div><div class="hp-chip-grid hp-active-grid">${KINK_LIBRARY.map(([k,l])=>`<button class="hp-chip scene ${activeSet.has(k)?'on':''}" data-active-kink="${k}">${l}</button>`).join('')}${(s.customKinks||[]).filter(k=>k.enabled!==false).map(k=>`<button class="hp-chip scene ${activeSet.has(customKinkId(k))?'on':''}" data-active-kink="${esc(customKinkId(k))}">✍️ ${esc(k.name)}</button>`).join('')}</div>
-      <div class="hp-custom-kinks"><div class="hp-subtitle">✍️ Свои кинки / фетиши</div><p class="hp-muted hp-micro">Сохраняются постоянно для этого персонажа и доступны в его других чатах. Название может быть на любом языке; описание объясняет модели, как именно это проявляется. Язык ролевой от этого не меняется.</p><div class="hp-custom-form"><input id="hpCustomKinkName" class="hp-input" placeholder="Название, например: Somnophilia"><textarea id="hpCustomKinkDesc" class="hp-text" placeholder="Коротко опиши смысл и желаемое проявление в ролевой..."></textarea><button id="hpCustomKinkSave" type="button">💾 Сохранить</button></div><div class="hp-custom-list">${(s.customKinks||[]).map(k=>`<div class="hp-custom-card"><label><input type="checkbox" data-custom-enabled="${esc(k.id)}" ${k.enabled!==false?'checked':''}> <b>${esc(k.name)}</b></label>${k.description?`<small>${esc(k.description)}</small>`:''}<button type="button" data-custom-del="${esc(k.id)}">🗑</button></div>`).join('')||'<p class="hp-muted">Пока ничего не сохранено.</p>'}</div></div>
+      <div class="hp-custom-kinks"><div class="hp-subtitle">✍️ Свои кинки / фетиши</div><p class="hp-muted hp-micro">Сохраняются в общей библиотеке HeartPulse и доступны во всех чатах и у всех персонажей. Название может быть на любом языке; описание объясняет модели, как именно это проявляется. Язык ролевой от этого не меняется.</p><div class="hp-custom-form"><input id="hpCustomKinkName" class="hp-input" placeholder="Название, например: Somnophilia"><textarea id="hpCustomKinkDesc" class="hp-text" placeholder="Коротко опиши смысл и желаемое проявление в ролевой..."></textarea><button id="hpCustomKinkSave" type="button">💾 Сохранить</button></div><div class="hp-custom-list">${(s.customKinks||[]).map(k=>`<div class="hp-custom-card"><label><input type="checkbox" data-custom-enabled="${esc(k.id)}" ${k.enabled!==false?'checked':''}> <b>${esc(k.name)}</b></label>${k.description?`<small>${esc(k.description)}</small>`:''}<button type="button" data-custom-del="${esc(k.id)}">🗑</button></div>`).join('')||'<p class="hp-muted">Пока ничего не сохранено.</p>'}</div></div>
       <div class="hp-auto-box"><label><input id="hpAutoSpark" type="checkbox" ${s.autoSpark?'checked':''}> 🎲 Авто-искра без отдельного API-запроса</label><label>Пауза после срабатывания: <input id="hpCooldown" class="hp-mini-input" type="number" min="1" max="12" value="${s.sparkCooldown}"> ответов</label><div class="hp-muted">${s.lastSpark?`Последняя авто-искра: ${esc(s.lastSpark)} · отдых ещё ${s.sparkCooldownRemaining} ответ(а/ов). После паузы искра снова может сработать, но не обязана.`:'Авто-искра ещё не срабатывала.'}</div></div></div>`)}
       ${page('intent',`<div class="hp-gold-card"><h3>🎯 Внутренние намерения</h3><p class="hp-muted">Эти поля может заполнять сама модель после ответа. Ручная правка всегда разрешена; 🔒 фиксирует поле.</p>${innerField('hiddenThought','Скрытая мысль','Что персонаж думает, но не говорит...')}${innerField('currentGoal','Цель сейчас','Чего он хочет добиться прямо сейчас...')}${innerField('futureDesire','Желание на будущее','К чему он хочет прийти позже...')}<div class="hp-subtitle">📌 Долгие цели, которые нельзя забыть</div><div id="hpIntentList">${s.intentions.map(x=>`<div class="hp-intent" data-id="${esc(x.id)}"><span>${esc(x.text)}</span><button data-done="${esc(x.id)}" title="Отметить цель выполненной">✓ Готово</button><button data-del="${esc(x.id)}" title="Удалить цель без отметки о выполнении">🗑</button></div>`).join('')||'<p class="hp-muted">Пока пусто. Модель может добавить такую цель сама, либо ты добавишь вручную.</p>'}</div><div class="hp-inline"><input id="hpIntentInput" class="hp-input" placeholder="Например: подарить кольцо в подходящий момент"><button id="hpIntentAdd">＋</button></div></div>`)}
       ${page('npc',`<div class="hp-soft-card"><h3>👥 NPC</h3><p class="hp-muted">Модель автоматически ведёт важные NPC, а ты можешь добавить, исправить или удалить карточку вручную. Удалённый NPC перестаёт передаваться модели как сохранённая память.</p><div class="hp-npc-form"><input id="hpNpcEditId" type="hidden"><input id="hpNpcName" class="hp-input" placeholder="Имя NPC, например: Калеб"><textarea id="hpNpcState" class="hp-text" placeholder="Кто он / текущее состояние / важный контекст..."></textarea><div class="hp-npc-form-grid"><input id="hpNpcMood" class="hp-input" placeholder="🎭 Настроение"><input id="hpNpcMotive" class="hp-input" placeholder="🧠 Мотив"><input id="hpNpcGoal" class="hp-input" placeholder="🎯 Цель"></div><div class="hp-npc-rel-edit">${[['trust','Доверие'],['affection','Привязанность'],['desire','Желание'],['irritation','Раздражение'],['fear','Страх'],['respect','Уважение']].map(([k,l])=>`<label>${l}<input id="hpNpcRel_${k}" class="hp-mini-input" type="number" min="0" max="200" value="0"></label>`).join('')}</div><div class="hp-actions"><button id="hpNpcSave" type="button">💾 Сохранить NPC</button><button id="hpNpcCancel" type="button">Очистить</button></div></div><div class="hp-npc-list">${(s.npc||[]).map(n=>`<div class="hp-npc" data-npc-id="${esc(n.id||'')}"><div class="hp-npc-head"><b>${esc(n.name||'NPC')}</b><div><button type="button" data-npc-edit="${esc(n.id||'')}">✏️</button><button type="button" data-npc-del="${esc(n.id||'')}">🗑</button></div></div><span>${esc(n.state||'')}</span>${n.mood?`<small>🎭 ${esc(n.mood)}</small>`:''}${n.motive?`<small>🧠 ${esc(n.motive)}</small>`:''}${n.goal?`<small>🎯 ${esc(n.goal)}</small>`:''}${n.relation?`<small>💞 Доверие ${clamp(n.relation.trust,0,REL_MAX)} · Привязанность ${clamp(n.relation.affection,0,REL_MAX)} · Желание ${clamp(n.relation.desire,0,REL_MAX)} · Раздражение ${clamp(n.relation.irritation,0,REL_MAX)} · Страх ${clamp(n.relation.fear,0,REL_MAX)} · Уважение ${clamp(n.relation.respect,0,REL_MAX)}</small>`:''}</div>`).join('')||'<p class="hp-muted">Нет сохранённых NPC. Если Калеб или другой именованный NPC участвует в сцене, модель теперь должна добавить его автоматически; при желании можно создать карточку вручную выше.</p>'}</div></div>`)}
@@ -969,9 +977,9 @@ function bind(){
   // Custom kink save is handled by a stable document-level delegated handler.
   // The panel is rebuilt by render(), so binding persistence only to the current
   // button can be fragile on mobile/ST DOM rebuilds.
-  document.querySelectorAll('[data-custom-enabled]').forEach(el=>el.addEventListener('change',async()=>{ const s=getState(), k=s.customKinks.find(x=>x.id===el.dataset.customEnabled); if(k) k.enabled=el.checked; writeCharacterCustomKinks(s.customKinks); await saveState(); renderModelPreview(); }));
+  document.querySelectorAll('[data-custom-enabled]').forEach(el=>el.addEventListener('change',async()=>{ const s=getState(), k=s.customKinks.find(x=>x.id===el.dataset.customEnabled); if(k){ k.enabled=el.checked; writeCharacterCustomKinks(s.customKinks); } await saveState(); renderModelPreview(); }));
   document.querySelectorAll('[data-custom-enabled-chip]').forEach(el=>el.addEventListener('click',async()=>{ const s=getState(), k=s.customKinks.find(x=>x.id===el.dataset.customEnabledChip); if(k){ k.enabled=k.enabled===false; writeCharacterCustomKinks(s.customKinks); await persistExactState(s); render(); } }));
-  document.querySelectorAll('[data-custom-del]').forEach(el=>el.addEventListener('click',async()=>{ const s=getState(); s.customKinks=s.customKinks.filter(x=>x.id!==el.dataset.customDel); s.kinks=s.kinks.filter(x=>x!==`custom:${el.dataset.customDel}`); s.activeKinks=s.activeKinks.filter(x=>x!==`custom:${el.dataset.customDel}`); writeCharacterCustomKinks(s.customKinks); await saveState(); render(); }));
+  document.querySelectorAll('[data-custom-del]').forEach(el=>el.addEventListener('click',async()=>{ const s=getState(); s.customKinks=s.customKinks.filter(x=>x.id!==el.dataset.customDel); s.kinks=s.kinks.filter(x=>x!==`custom:${el.dataset.customDel}`); s.activeKinks=s.activeKinks.filter(x=>x!==`custom:${el.dataset.customDel}`); writeCharacterCustomKinks(s.customKinks); await persistExactState(s); render(); }));
   q('#hpScanCard')?.addEventListener('click',scanAndStoreCard);
   q('#hpIntentAdd')?.addEventListener('click',async()=>{ const t=q('#hpIntentInput').value.trim(); if(!t)return; getState().intentions.push({id:makeId(),text:t,priority:'обычно'}); await saveState(); render(); });
   document.querySelectorAll('[data-done],[data-del]').forEach(b=>b.addEventListener('click',async()=>{ const id=b.dataset.done||b.dataset.del,s=getState(),hit=s.intentions.find(x=>x.id===id); if(b.dataset.done&&hit){ const ok=window.confirm(`Отметить цель выполненной?\n\n${hit.text}`); if(!ok) return; } s.intentions=s.intentions.filter(x=>x.id!==id); if(b.dataset.done&&hit){s.journal.unshift({ts:now(),type:'done',text:`Цель завершена: ${hit.text}`}); toast(`Цель завершена: ${hit.text}`,'success');} await saveState(); render(); }));
@@ -1132,8 +1140,8 @@ function installCustomKinkDelegation(){
         st.customKinks.push({id:makeId(),name,description,enabled:true});
       }
       st.customKinks=normalizeCustomKinks(st.customKinks);
-      // Character-level library first, then the exact chat snapshot/backup.
-      // This makes the item survive closing the panel, chat changes and branches.
+      // USER-global library first. Chat/checkpoint persistence below is deliberately
+      // forbidden from writing back to this library, so branch restoration cannot erase it.
       writeCharacterCustomKinks(st.customKinks);
       await persistExactState(st);
       const check=readCharacterCustomKinks();
@@ -1209,7 +1217,7 @@ function init(){
   safeOn(event_types.MESSAGE_RECEIVED,(messageId)=>{ parseModelStateAtIndex(messageId,'MESSAGE_RECEIVED exact'); [120,420].forEach(ms=>setTimeout(()=>parseModelStateAtIndex(messageId,'MESSAGE_RECEIVED retry'),ms)); });
   safeOn(event_types.GENERATION_ENDED,async()=>{ await parseLatestModelState('GENERATION_ENDED'); setTimeout(()=>parseLatestModelState('GENERATION_ENDED+500ms'),500); const s=getState();if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();}await refreshPrompt({includeAutoSpark:false});});
   setInterval(()=>{ ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); syncSettingsEntry(); },1800);
-  console.log('[HeartPulse] v0.9.9.11 stable cross-chat custom kinks ready');
+  console.log('[HeartPulse] v0.9.9.13 global custom kink library ready');
   return true;
 }
 
