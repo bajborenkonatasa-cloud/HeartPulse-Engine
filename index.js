@@ -241,6 +241,47 @@ function currentChatKey(){
   return `${char}:${String(chat)}`.replace(/[^a-zA-Z0-9_.:-]/g,'_').slice(0,220);
 }
 function backupKey(){ return BACKUP_PREFIX + currentChatKey(); }
+// Custom Spark preferences are character-level, not chat-level: once the user
+// saves one for a character it should be available in every chat/branch with
+// that same character. The roleplay state itself remains chat/branch scoped.
+const CUSTOM_KINKS_PREFIX='heartpulse_custom_kinks_v1:';
+function currentCharacterKey(){
+  const c=ctx();
+  if(!c) return 'no-character';
+  if(c.groupId) return `group-${c.groupId}`;
+  const id=c.characterId ?? 'none';
+  const ch=c.characters?.[id];
+  const avatar=ch?.avatar || ch?.data?.avatar || '';
+  const name=ch?.name || ch?.data?.name || '';
+  return `char-${id}:${avatar}:${name}`.replace(/[^a-zA-Z0-9_.:-]/g,'_').slice(0,220);
+}
+function customKinksKey(){ return CUSTOM_KINKS_PREFIX + currentCharacterKey(); }
+function normalizeCustomKinks(list){
+  return (Array.isArray(list)?list:[]).map((x,i)=> typeof x==='string'
+    ? {id:`legacy-${i}-${String(x).slice(0,24)}`,name:String(x).trim(),description:'',enabled:true}
+    : {id:x?.id||makeId(),name:String(x?.name||'').trim(),description:String(x?.description||'').trim(),enabled:x?.enabled!==false}
+  ).filter(x=>x.name);
+}
+function readCharacterCustomKinks(){
+  try{return normalizeCustomKinks(safeParse(localStorage.getItem(customKinksKey())||'')||[]);}catch{return [];}
+}
+function writeCharacterCustomKinks(list){
+  try{localStorage.setItem(customKinksKey(),JSON.stringify(normalizeCustomKinks(list)));}catch(e){console.warn('[HeartPulse] character custom kinks backup failed',e);}
+}
+function mergeCustomKinks(chatList, characterList){
+  const out=[], byName=new Map();
+  for(const item of [...normalizeCustomKinks(characterList),...normalizeCustomKinks(chatList)]){
+    const key=item.name.toLocaleLowerCase();
+    if(byName.has(key)){
+      const old=byName.get(key);
+      if(item.description) old.description=item.description;
+      old.enabled=item.enabled!==false;
+      continue;
+    }
+    const copy={...item}; byName.set(key,copy); out.push(copy);
+  }
+  return out;
+}
 function readBackup(){ return safeParse(localStorage.getItem(backupKey())||''); }
 function writeBackup(state){ try{ localStorage.setItem(backupKey(), JSON.stringify(state)); }catch(e){ console.warn('[HeartPulse] backup failed',e); } }
 function readUi(){ return Object.assign({showFab:true,x:null,y:112,extrasOpen:false,activeTab:'pulse',showAllJournal:false}, safeParse(localStorage.getItem(UI_KEY)||'')||{}); }
@@ -257,6 +298,10 @@ function getState(){
   if(!chosen && backup) chosen=backup;
   else if(chosen && backup && Number(backup.updatedAt||0) > Number(chosen.updatedAt||0)) chosen=backup;
   const s=stateMerge(chosen);
+  // Migrate/merge old chat-local custom entries into the persistent character library.
+  const characterCustom=readCharacterCustomKinks();
+  s.customKinks=mergeCustomKinks(s.customKinks,characterCustom);
+  writeCharacterCustomKinks(s.customKinks);
   try{
     if(c?.chatMetadata && typeof c.chatMetadata === 'object') c.chatMetadata[META_KEY]=s;
   }catch(e){ console.warn('[HeartPulse] chatMetadata write failed; local backup will be used',e); }
@@ -267,6 +312,7 @@ async function saveState(){
   const c=ctx();
   const s=getState(); s.updatedAt=now();
   compactHistory(s);
+  writeCharacterCustomKinks(s.customKinks);
   writeBackup(s);
   if(c){
     try{ await c.saveMetadata?.(); }catch(e){ console.warn('[HeartPulse] metadata save failed; backup kept',e); }
@@ -283,6 +329,7 @@ async function persistExactState(s){
   const c=ctx();
   s.updatedAt=now();
   compactHistory(s);
+  writeCharacterCustomKinks(s.customKinks);
   try{
     if(c?.chatMetadata && typeof c.chatMetadata==='object') c.chatMetadata[META_KEY]=s;
   }catch(e){ console.warn('[HeartPulse] exact metadata write failed',e); }
@@ -896,9 +943,9 @@ function bind(){
   q('#hpChance')?.addEventListener('change',saveState);
   q('#hpCooldown')?.addEventListener('change',async e=>{getState().sparkCooldown=clamp(Number(e.target.value),1,12); await saveState();});
   q('#hpAutoSpark')?.addEventListener('change',async e=>{getState().autoSpark=e.target.checked; await saveState();});
-  q('#hpCustomKinkSave')?.addEventListener('click',async()=>{ const name=q('#hpCustomKinkName')?.value?.trim(), description=q('#hpCustomKinkDesc')?.value?.trim()||''; if(!name) return toast('Напиши название кинка / фетиша','info'); const s=getState(); const existing=(s.customKinks||[]).find(x=>x.name.toLowerCase()===name.toLowerCase()); if(existing){ existing.description=description||existing.description; existing.enabled=true; } else s.customKinks.push({id:makeId(),name,description,enabled:true}); await saveState(); toast(`Сохранено: ${name}`,'success'); render(); });
-  document.querySelectorAll('[data-custom-enabled]').forEach(el=>el.addEventListener('change',async()=>{ const s=getState(), k=s.customKinks.find(x=>x.id===el.dataset.customEnabled); if(k) k.enabled=el.checked; await saveState(); renderModelPreview(); }));
-  document.querySelectorAll('[data-custom-del]').forEach(el=>el.addEventListener('click',async()=>{ const s=getState(); s.customKinks=s.customKinks.filter(x=>x.id!==el.dataset.customDel); s.kinks=s.kinks.filter(x=>x!==`custom:${el.dataset.customDel}`); s.activeKinks=s.activeKinks.filter(x=>x!==`custom:${el.dataset.customDel}`); await saveState(); render(); }));
+  q('#hpCustomKinkSave')?.addEventListener('click',async()=>{ const name=q('#hpCustomKinkName')?.value?.trim(), description=q('#hpCustomKinkDesc')?.value?.trim()||''; if(!name) return toast('Напиши название кинка / фетиша','info'); const s=getState(); const existing=(s.customKinks||[]).find(x=>x.name.toLowerCase()===name.toLowerCase()); if(existing){ existing.description=description||existing.description; existing.enabled=true; } else s.customKinks.push({id:makeId(),name,description,enabled:true}); writeCharacterCustomKinks(s.customKinks); await saveState(); toast(`Сохранено: ${name}`,'success'); render(); });
+  document.querySelectorAll('[data-custom-enabled]').forEach(el=>el.addEventListener('change',async()=>{ const s=getState(), k=s.customKinks.find(x=>x.id===el.dataset.customEnabled); if(k) k.enabled=el.checked; writeCharacterCustomKinks(s.customKinks); await saveState(); renderModelPreview(); }));
+  document.querySelectorAll('[data-custom-del]').forEach(el=>el.addEventListener('click',async()=>{ const s=getState(); s.customKinks=s.customKinks.filter(x=>x.id!==el.dataset.customDel); s.kinks=s.kinks.filter(x=>x!==`custom:${el.dataset.customDel}`); s.activeKinks=s.activeKinks.filter(x=>x!==`custom:${el.dataset.customDel}`); writeCharacterCustomKinks(s.customKinks); await saveState(); render(); }));
   q('#hpScanCard')?.addEventListener('click',scanAndStoreCard);
   q('#hpIntentAdd')?.addEventListener('click',async()=>{ const t=q('#hpIntentInput').value.trim(); if(!t)return; getState().intentions.push({id:makeId(),text:t,priority:'обычно'}); await saveState(); render(); });
   document.querySelectorAll('[data-done],[data-del]').forEach(b=>b.addEventListener('click',async()=>{ const id=b.dataset.done||b.dataset.del,s=getState(),hit=s.intentions.find(x=>x.id===id); if(b.dataset.done&&hit){ const ok=window.confirm(`Отметить цель выполненной?\n\n${hit.text}`); if(!ok) return; } s.intentions=s.intentions.filter(x=>x.id!==id); if(b.dataset.done&&hit){s.journal.unshift({ts:now(),type:'done',text:`Цель завершена: ${hit.text}`}); toast(`Цель завершена: ${hit.text}`,'success');} await saveState(); render(); }));
@@ -1087,7 +1134,7 @@ function init(){
   safeOn(event_types.MESSAGE_RECEIVED,(messageId)=>{ parseModelStateAtIndex(messageId,'MESSAGE_RECEIVED exact'); [120,420].forEach(ms=>setTimeout(()=>parseModelStateAtIndex(messageId,'MESSAGE_RECEIVED retry'),ms)); });
   safeOn(event_types.GENERATION_ENDED,async()=>{ await parseLatestModelState('GENERATION_ENDED'); setTimeout(()=>parseLatestModelState('GENERATION_ENDED+500ms'),500); const s=getState();if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();}await refreshPrompt({includeAutoSpark:false});});
   setInterval(()=>{ ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); syncSettingsEntry(); },1800);
-  console.log('[HeartPulse] v0.9.9.8 branch-safe checkpoints ready');
+  console.log('[HeartPulse] v0.9.9.9 persistent custom kinks ready');
   return true;
 }
 
