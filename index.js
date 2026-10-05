@@ -245,6 +245,7 @@ function backupKey(){ return BACKUP_PREFIX + currentChatKey(); }
 // saves one for a character it should be available in every chat/branch with
 // that same character. The roleplay state itself remains chat/branch scoped.
 const CUSTOM_KINKS_PREFIX='heartpulse_custom_kinks_v1:';
+const CUSTOM_KINKS_STABLE_PREFIX='heartpulse_custom_kinks_v2:';
 function currentCharacterKey(){
   const c=ctx();
   if(!c) return 'no-character';
@@ -256,6 +257,19 @@ function currentCharacterKey(){
   return `char-${id}:${avatar}:${name}`.replace(/[^a-zA-Z0-9_.:-]/g,'_').slice(0,220);
 }
 function customKinksKey(){ return CUSTOM_KINKS_PREFIX + currentCharacterKey(); }
+// Stable across chats/branches. SillyTavern's numeric characterId/context can change,
+// so persistent user preferences must not depend on it.
+function stableCharacterKey(){
+  const c=ctx();
+  if(c?.groupId) return `group:${c.groupId}`;
+  const id=c?.characterId;
+  const ch=(id!=null && c?.characters) ? c.characters[id] : null;
+  const avatar=String(ch?.avatar || ch?.data?.avatar || c?.character?.avatar || '').trim();
+  const name=String(ch?.name || ch?.data?.name || c?.name2 || currentCharName?.() || '').trim();
+  const raw=(avatar ? `avatar:${avatar}` : `name:${name || 'unknown'}`).toLocaleLowerCase();
+  return encodeURIComponent(raw).slice(0,500);
+}
+function stableCustomKinksKey(){ return CUSTOM_KINKS_STABLE_PREFIX + stableCharacterKey(); }
 function normalizeCustomKinks(list){
   return (Array.isArray(list)?list:[]).map((x,i)=> typeof x==='string'
     ? {id:`legacy-${i}-${String(x).slice(0,24)}`,name:String(x).trim(),description:'',enabled:true}
@@ -263,10 +277,19 @@ function normalizeCustomKinks(list){
   ).filter(x=>x.name);
 }
 function readCharacterCustomKinks(){
-  try{return normalizeCustomKinks(safeParse(localStorage.getItem(customKinksKey())||'')||[]);}catch{return [];}
+  try{
+    const stable=normalizeCustomKinks(safeParse(localStorage.getItem(stableCustomKinksKey())||'')||[]);
+    const legacy=normalizeCustomKinks(safeParse(localStorage.getItem(customKinksKey())||'')||[]);
+    return mergeCustomKinks(legacy,stable);
+  }catch{return [];}
 }
 function writeCharacterCustomKinks(list){
-  try{localStorage.setItem(customKinksKey(),JSON.stringify(normalizeCustomKinks(list)));}catch(e){console.warn('[HeartPulse] character custom kinks backup failed',e);}
+  const normalized=normalizeCustomKinks(list);
+  try{
+    // v2 is the authoritative cross-chat store; legacy write is kept only for migration safety.
+    localStorage.setItem(stableCustomKinksKey(),JSON.stringify(normalized));
+    localStorage.setItem(customKinksKey(),JSON.stringify(normalized));
+  }catch(e){console.warn('[HeartPulse] character custom kinks backup failed',e);}
 }
 function mergeCustomKinks(chatList, characterList){
   const out=[], byName=new Map();
@@ -838,15 +861,15 @@ function panelHtml(){
   }
   const journalHtml=journalGroups.map(g=>`<div class="hp-journal-group"><div class="hp-journal-day">${esc(g.day)}</div>${g.items.map(j=>`<div class="hp-log" data-journal-index="${j._index}"><div class="hp-log-top"><label class="hp-log-select"><input type="checkbox" data-journal-select="${j._index}"></label><time>${new Date(j.ts).toLocaleTimeString()}</time><div class="hp-log-actions"><button type="button" data-journal-edit="${j._index}" title="Редактировать">✏️</button><button type="button" data-journal-del="${j._index}" title="Удалить">🗑</button></div></div><span>${esc(j.text)}</span>${j.type==='done'?`<button class="hp-restore-goal" data-restore-journal="${j._index}">↩ Вернуть цель</button>`:''}</div>`).join('')}</div>`).join('');
   return `<div id="hpOverlay" class="hp-overlay hp-hidden"><div id="hpPanel" class="hp-panel">
-    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.9.9.10</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
+    <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.9.9.11</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
     <nav class="hp-tabs">${tabBtn('pulse','💗 Пульс')}${tabBtn('spark','❤️‍🔥 Искра')}${tabBtn('intent','🎯 Намерения')}${tabBtn('npc','👥 NPC')}${tabBtn('journal','📜 Журнал')}${tabBtn('model','👁 Модель')}</nav>
     <main class="hp-body">
       ${page('pulse',`<div class="hp-soft-card"><h3>💞 Эмоциональный пульс</h3><div class="hp-auto-status ${s.autoTrack?'on':''}">${s.autoTrack?'🤖 HeartPulse хранит полную палитру чувств, а здесь показывает только 1–6 самых актуальных сейчас.':'🖐️ Авто-динамика выключена: данные меняешь ты.'}</div><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: взаимное движение навстречу"><div class="hp-actions"><button id="hpRecalibrate">${s.recalibrationRequested?'⏳ Переоценка — со следующим ответом':'🧭 Переоценить отношения'}</button></div><p class="hp-muted hp-micro">Внутри движка остаются все чувства 0–200. На экран выводятся только 1–6 чувств, которые сейчас реально важны.</p><div class="hp-rel-grid hp-rel-active">${visibleFeelingKeys(s).map(k=>`<label>${esc(REL_LABEL[k]||k)}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div>${s.feelingNote?`<div class="hp-feeling-note">💭 ${esc(s.feelingNote)}</div>`:''}${s.lastShift?`<div class="hp-shift">✨ Последний сдвиг: ${esc(s.lastShift)}</div>`:''}<details id="hpAllFeelings" class="hp-extra-feelings"><summary>🧠 Вся внутренняя палитра (${REL_FIELDS.length})</summary><p class="hp-muted hp-micro">Это скрытый движок. Обычно сюда заходить не нужно; можно раскрыть для ручной правки.</p><div class="hp-rel-grid">${REL_FIELDS.map(([k,l])=>`<label>${l}<b data-val="${k}">${clamp(s.relation[k],0,REL_MAX)}</b><input class="hp-range" data-rel="${k}" type="range" min="0" max="200" value="${clamp(s.relation[k],0,REL_MAX)}"></label>`).join('')}</div></details><div class="hp-inner-mini"><h4>🧠 Что сейчас внутри</h4>${innerField('mood','Настроение','Например: спокойная решимость, тревога, азарт...')}${innerField('motives','Мотивы','Почему персонаж сейчас действует именно так...')}</div><p class="hp-muted hp-tip">Модель сама решает, какие чувства сейчас активны. Если обида, страсть, ревность, дружба или другое состояние действительно стали важны — оно появится в верхних 1–6 ползунках.</p></div>`)}
       ${page('spark',`<div class="hp-hot-card"><h3>❤️‍🔥 Искра / кинки</h3><div class="hp-row"><label>Интенсивность <b id="hpIntensityVal">${s.kinkIntensity}</b><input id="hpIntensity" type="range" min="0" max="100" value="${s.kinkIntensity}"></label><label>Шанс авто-искра <b id="hpChanceVal">${s.kinkChance}%</b><input id="hpChance" type="range" min="0" max="100" value="${s.kinkChance}"></label></div>
-      <div class="hp-subtitle">Постоянные предпочтения персонажа</div><div class="hp-chip-grid">${KINK_LIBRARY.map(([k,l])=>`<button class="hp-chip ${prefSet.has(k)?'on':''}" data-kink="${k}">${l}</button>`).join('')}</div>
+      <div class="hp-subtitle">Постоянные предпочтения персонажа</div><div class="hp-chip-grid">${KINK_LIBRARY.map(([k,l])=>`<button class="hp-chip ${prefSet.has(k)?'on':''}" data-kink="${k}">${l}</button>`).join('')}${(s.customKinks||[]).map(k=>`<button class="hp-chip hp-custom-chip ${k.enabled!==false?'on':''}" data-custom-enabled-chip="${esc(k.id)}" title="${esc(k.description||'')}">✍️ ${esc(k.name)}</button>`).join('')}</div>
       <div class="hp-actions"><button id="hpScanCard">✨ Проверить карточку локально</button></div><p class="hp-muted">Без API и без отдельного запроса: HeartPulse читает текст карточки текущего персонажа и ищет известные признаки.</p>
       <div class="hp-scan-report"><b>🩺 Анамнез карточки</b>${s.lastCardScanAt?`<span class="hp-muted">Последняя проверка: ${new Date(s.lastCardScanAt).toLocaleTimeString()}</span>`:''}${scan.length?`<div class="hp-scan-chips">${scan.map(k=>`<span>${esc(kinkDisplay(s,k))}</span>`).join('')}</div>`:'<p class="hp-muted">Ещё не проверено или явных совпадений не найдено.</p>'}</div>
-      <div class="hp-subtitle">Активно именно в этой сцене</div><div class="hp-chip-grid hp-active-grid">${KINK_LIBRARY.map(([k,l])=>`<button class="hp-chip scene ${activeSet.has(k)?'on':''}" data-active-kink="${k}">${l}</button>`).join('')}</div>
+      <div class="hp-subtitle">Активно именно в этой сцене</div><div class="hp-chip-grid hp-active-grid">${KINK_LIBRARY.map(([k,l])=>`<button class="hp-chip scene ${activeSet.has(k)?'on':''}" data-active-kink="${k}">${l}</button>`).join('')}${(s.customKinks||[]).filter(k=>k.enabled!==false).map(k=>`<button class="hp-chip scene ${activeSet.has(customKinkId(k))?'on':''}" data-active-kink="${esc(customKinkId(k))}">✍️ ${esc(k.name)}</button>`).join('')}</div>
       <div class="hp-custom-kinks"><div class="hp-subtitle">✍️ Свои кинки / фетиши</div><p class="hp-muted hp-micro">Сохраняются постоянно для этого персонажа и доступны в его других чатах. Название может быть на любом языке; описание объясняет модели, как именно это проявляется. Язык ролевой от этого не меняется.</p><div class="hp-custom-form"><input id="hpCustomKinkName" class="hp-input" placeholder="Название, например: Somnophilia"><textarea id="hpCustomKinkDesc" class="hp-text" placeholder="Коротко опиши смысл и желаемое проявление в ролевой..."></textarea><button id="hpCustomKinkSave" type="button">💾 Сохранить</button></div><div class="hp-custom-list">${(s.customKinks||[]).map(k=>`<div class="hp-custom-card"><label><input type="checkbox" data-custom-enabled="${esc(k.id)}" ${k.enabled!==false?'checked':''}> <b>${esc(k.name)}</b></label>${k.description?`<small>${esc(k.description)}</small>`:''}<button type="button" data-custom-del="${esc(k.id)}">🗑</button></div>`).join('')||'<p class="hp-muted">Пока ничего не сохранено.</p>'}</div></div>
       <div class="hp-auto-box"><label><input id="hpAutoSpark" type="checkbox" ${s.autoSpark?'checked':''}> 🎲 Авто-искра без отдельного API-запроса</label><label>Пауза после срабатывания: <input id="hpCooldown" class="hp-mini-input" type="number" min="1" max="12" value="${s.sparkCooldown}"> ответов</label><div class="hp-muted">${s.lastSpark?`Последняя авто-искра: ${esc(s.lastSpark)} · отдых ещё ${s.sparkCooldownRemaining} ответ(а/ов). После паузы искра снова может сработать, но не обязана.`:'Авто-искра ещё не срабатывала.'}</div></div></div>`)}
       ${page('intent',`<div class="hp-gold-card"><h3>🎯 Внутренние намерения</h3><p class="hp-muted">Эти поля может заполнять сама модель после ответа. Ручная правка всегда разрешена; 🔒 фиксирует поле.</p>${innerField('hiddenThought','Скрытая мысль','Что персонаж думает, но не говорит...')}${innerField('currentGoal','Цель сейчас','Чего он хочет добиться прямо сейчас...')}${innerField('futureDesire','Желание на будущее','К чему он хочет прийти позже...')}<div class="hp-subtitle">📌 Долгие цели, которые нельзя забыть</div><div id="hpIntentList">${s.intentions.map(x=>`<div class="hp-intent" data-id="${esc(x.id)}"><span>${esc(x.text)}</span><button data-done="${esc(x.id)}" title="Отметить цель выполненной">✓ Готово</button><button data-del="${esc(x.id)}" title="Удалить цель без отметки о выполнении">🗑</button></div>`).join('')||'<p class="hp-muted">Пока пусто. Модель может добавить такую цель сама, либо ты добавишь вручную.</p>'}</div><div class="hp-inline"><input id="hpIntentInput" class="hp-input" placeholder="Например: подарить кольцо в подходящий момент"><button id="hpIntentAdd">＋</button></div></div>`)}
@@ -947,6 +970,7 @@ function bind(){
   // The panel is rebuilt by render(), so binding persistence only to the current
   // button can be fragile on mobile/ST DOM rebuilds.
   document.querySelectorAll('[data-custom-enabled]').forEach(el=>el.addEventListener('change',async()=>{ const s=getState(), k=s.customKinks.find(x=>x.id===el.dataset.customEnabled); if(k) k.enabled=el.checked; writeCharacterCustomKinks(s.customKinks); await saveState(); renderModelPreview(); }));
+  document.querySelectorAll('[data-custom-enabled-chip]').forEach(el=>el.addEventListener('click',async()=>{ const s=getState(), k=s.customKinks.find(x=>x.id===el.dataset.customEnabledChip); if(k){ k.enabled=k.enabled===false; writeCharacterCustomKinks(s.customKinks); await persistExactState(s); render(); } }));
   document.querySelectorAll('[data-custom-del]').forEach(el=>el.addEventListener('click',async()=>{ const s=getState(); s.customKinks=s.customKinks.filter(x=>x.id!==el.dataset.customDel); s.kinks=s.kinks.filter(x=>x!==`custom:${el.dataset.customDel}`); s.activeKinks=s.activeKinks.filter(x=>x!==`custom:${el.dataset.customDel}`); writeCharacterCustomKinks(s.customKinks); await saveState(); render(); }));
   q('#hpScanCard')?.addEventListener('click',scanAndStoreCard);
   q('#hpIntentAdd')?.addEventListener('click',async()=>{ const t=q('#hpIntentInput').value.trim(); if(!t)return; getState().intentions.push({id:makeId(),text:t,priority:'обычно'}); await saveState(); render(); });
@@ -1185,7 +1209,7 @@ function init(){
   safeOn(event_types.MESSAGE_RECEIVED,(messageId)=>{ parseModelStateAtIndex(messageId,'MESSAGE_RECEIVED exact'); [120,420].forEach(ms=>setTimeout(()=>parseModelStateAtIndex(messageId,'MESSAGE_RECEIVED retry'),ms)); });
   safeOn(event_types.GENERATION_ENDED,async()=>{ await parseLatestModelState('GENERATION_ENDED'); setTimeout(()=>parseLatestModelState('GENERATION_ENDED+500ms'),500); const s=getState();if(s.oneShotDirective){s.oneShotDirective='';await saveState();render();}await refreshPrompt({includeAutoSpark:false});});
   setInterval(()=>{ ensureButton(); ensureSettingsEntry(); registerWandMenuItem(); syncSettingsEntry(); },1800);
-  console.log('[HeartPulse] v0.9.9.10 reliable persistent custom kinks ready');
+  console.log('[HeartPulse] v0.9.9.11 stable cross-chat custom kinks ready');
   return true;
 }
 
