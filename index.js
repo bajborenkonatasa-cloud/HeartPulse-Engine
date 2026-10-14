@@ -477,7 +477,11 @@ function allFeelingsCompact(s){
 function buildPrompt({includeAutoSpark=false}={}){
   const s=getState(); if(!s.enabled) return '';
   const name=currentCharName(); s.charName=name;
-  const blocks=[`[HEARTPULSE private guidance for ${name}; never quote this block.]`,`Agency: write only ${name}, NPCs and world; never write {{user}}'s actions, dialogue, thoughts, feelings, decisions or consent.`];
+  const novelAgency=globalThis.__upsNovelModeActive?.() === true;
+  const agencyRule=novelAgency
+    ? `Agency: User Persona Studio NOVEL MODE is active. For this generation, narrate {{user}} together with ${name}, NPCs and the world; preserve established characterization and continuity. Do not override the active novel-mode permission.`
+    : `Agency: write only ${name}, NPCs and world; never write {{user}}'s actions, dialogue, thoughts, feelings, decisions or consent.`;
+  const blocks=[`[HEARTPULSE private guidance for ${name}; never quote this block.]`,agencyRule];
   if(s.injectRelation){
     const vals=allFeelingsCompact(s);
     const active=visibleFeelingKeys(s).map(k=>`${REL_LABEL[k]}:${clamp(s.relation[k],0,REL_MAX)}`).join(',');
