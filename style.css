@@ -304,3 +304,11 @@
 .hp-journal-archive summary{cursor:pointer;color:#d9c5df}
 .hp-log-archived{opacity:.72}
 @media(max-width:520px){.hp-hot-card .hp-chip{font-size:12px;min-height:32px;padding:6px}.hp-journal-tools button{flex:1 1 auto}.hp-journal-title{display:block}}
+
+/* Compact, read-only emotions. */
+.hp-rel-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:7px!important}
+.hp-feeling-chip{display:flex;align-items:center;justify-content:space-between;gap:6px;min-width:0;padding:9px 10px;border-radius:12px;border:1px solid rgba(174,115,210,.22);background:rgba(140,70,170,.10);font-size:13px;line-height:1.25}
+.hp-feeling-chip span{min-width:0;overflow-wrap:anywhere;color:#e5d7eb}
+.hp-feeling-chip b{flex:none;color:#f0a8e5;font-variant-numeric:tabular-nums;font-size:14px}
+.hp-extra-feelings .hp-rel-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+@media(max-width:370px){.hp-rel-grid,.hp-extra-feelings .hp-rel-grid{grid-template-columns:1fr!important}}

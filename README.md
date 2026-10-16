@@ -153,3 +153,7 @@ This build intentionally disables dragging of the floating button to eliminate A
 - Journal entries can be edited/deleted; selected entries can be merged.
 - Older journal entries can be moved to a local archive without deleting current feelings, goals, or NPC state.
 - Working v0.9.9.x service-packet transport/parser logic was not changed.
+
+
+### Compact emotional pulse
+The Pulse tab shows read-only emotion values 0–200 without sliders. Automatic tracking and stored values remain unchanged; Spark controls are unaffected.
