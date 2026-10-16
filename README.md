@@ -157,3 +157,6 @@ This build intentionally disables dragging of the floating button to eliminate A
 
 ### Compact emotional pulse
 The Pulse tab shows read-only emotion values 0–200 without sliders. Automatic tracking and stored values remain unchanged; Spark controls are unaffected.
+
+### Card anamnesis persistence fix
+Card scan results are now cached by a stable character identity, independent of branch checkpoints. A chat switch restores the latest card anamnesis while keeping branch-specific feelings and plot state separate. This does not make a new API request.

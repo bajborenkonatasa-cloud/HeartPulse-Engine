@@ -206,6 +206,7 @@ async function restoreCheckpointForCurrentChat(reason='chat changed'){
   const hit=latestMessageCheckpoint();
   if(!hit) return false; // Legacy chats keep their existing metadata until new checkpoints exist.
   const restored=hit.state;
+  hydrateCardAnamnesis(restored);
   restored.updatedAt=now();
   restored.diagnostics=Object.assign({},defaults().diagnostics,{
     lastParseAt:now(),
@@ -320,6 +321,28 @@ function writeBackup(state){ try{ localStorage.setItem(backupKey(), JSON.stringi
 function readUi(){ return Object.assign({showFab:true,x:null,y:112,extrasOpen:false,activeTab:'pulse',showAllJournal:false}, safeParse(localStorage.getItem(UI_KEY)||'')||{}); }
 function saveUi(ui){ try{ localStorage.setItem(UI_KEY,JSON.stringify(ui)); }catch{} }
 
+// Card anamnesis is character-specific, not a roleplay branch checkpoint.
+const CARD_SCAN_PREFIX='heartpulse_card_anamnesis_v1:';
+function cardScanKey(){ return CARD_SCAN_PREFIX + stableCharacterKey(); }
+function readCardAnamnesis(){
+  try{const value=safeParse(localStorage.getItem(cardScanKey())||'');
+    return value && Array.isArray(value.found) && Number.isFinite(Number(value.at)) ? value : null;
+  }catch(e){console.warn('[HeartPulse] card anamnesis read failed',e);return null;}
+}
+function storeCardAnamnesis(found,at){
+  try{localStorage.setItem(cardScanKey(),JSON.stringify({found:[...new Set(found)],at:Number(at)||now()}));}
+  catch(e){console.warn('[HeartPulse] card anamnesis backup failed',e);}
+}
+function hydrateCardAnamnesis(s){
+  const stored=readCardAnamnesis();
+  // Migrate previously scanned chat metadata once, without replacing newer scans.
+  if(!stored && Number(s.lastCardScanAt)>0 && Array.isArray(s.lastCardScan)){
+    storeCardAnamnesis(s.lastCardScan,s.lastCardScanAt);
+  }
+  const current=readCardAnamnesis();
+  if(current){s.lastCardScan=[...current.found];s.lastCardScanAt=Number(current.at)||0;}
+  return s;
+}
 function getState(){
   const c=ctx();
   const backup = readBackup();
@@ -335,6 +358,7 @@ function getState(){
   // A checkpoint or old chat snapshot may contain a stale customKinks array; ignore it.
   // The fixed global store is the only authority shown in every character/chat.
   s.customKinks=readCharacterCustomKinks();
+  hydrateCardAnamnesis(s);
   try{
     if(c?.chatMetadata && typeof c.chatMetadata === 'object') c.chatMetadata[META_KEY]=s;
   }catch(e){ console.warn('[HeartPulse] chatMetadata write failed; local backup will be used',e); }
@@ -876,7 +900,7 @@ function panelHtml(){
     <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.9.9.11</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
     <nav class="hp-tabs">${tabBtn('pulse','💗 Пульс')}${tabBtn('spark','❤️‍🔥 Искра')}${tabBtn('intent','🎯 Намерения')}${tabBtn('npc','👥 NPC')}${tabBtn('journal','📜 Журнал')}${tabBtn('model','👁 Модель')}</nav>
     <main class="hp-body">
-      ${page('pulse',`<div class="hp-soft-card"><h3>💞 Эмоциональный пульс</h3><div class="hp-auto-status ${s.autoTrack?'on':''}">${s.autoTrack?'🤖 HeartPulse хранит полную палитру чувств, а здесь показывает только 1–6 самых актуальных сейчас.':'🖐️ Авто-динамика выключена: данные меняешь ты.'}</div><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: взаимное движение навстречу"><div class="hp-actions"><button id="hpRecalibrate">${s.recalibrationRequested?'⏳ Переоценка — со следующим ответом':'🧭 Переоценить отношения'}</button></div><p class="hp-muted hp-micro">Внутри движка остаются все чувства 0–200. На экран выводятся только 1–6 чувств, которые сейчас реально важны.</p><div class="hp-rel-grid hp-rel-active">${visibleFeelingKeys(s).map(k=>`<div class="hp-feeling-chip"><span>${esc(REL_LABEL[k]||k)}</span><b>${clamp(s.relation[k],0,REL_MAX)}%</b></div>`).join('')}</div>${s.feelingNote?`<div class="hp-feeling-note">💭 ${esc(s.feelingNote)}</div>`:''}${s.lastShift?`<div class="hp-shift">✨ Последний сдвиг: ${esc(s.lastShift)}</div>`:''}<details id="hpAllFeelings" class="hp-extra-feelings"><summary>🧠 Вся внутренняя палитра (${REL_FIELDS.length})</summary><p class="hp-muted hp-micro">Это скрытый движок. Обычно сюда заходить не нужно; можно раскрыть для просмотра всех значений.</p><div class="hp-rel-grid">${REL_FIELDS.map(([k,l])=>`<div class="hp-feeling-chip"><span>${esc(l)}</span><b>${clamp(s.relation[k],0,REL_MAX)}%</b></div>`).join('')}</div></details><div class="hp-inner-mini"><h4>🧠 Что сейчас внутри</h4>${innerField('mood','Настроение','Например: спокойная решимость, тревога, азарт...')}${innerField('motives','Мотивы','Почему персонаж сейчас действует именно так...')}</div><p class="hp-muted hp-tip">Модель сама решает, какие чувства сейчас активны. Если обида, страсть, ревность, дружба или другое состояние действительно стали важны — оно появится среди верхних 1–6 показателей.</p></div>`)}
+      ${page('pulse',`<div class="hp-soft-card"><h3>💞 Эмоциональный пульс</h3><div class="hp-auto-status ${s.autoTrack?'on':''}">${s.autoTrack?'🤖 HeartPulse хранит полную палитру чувств, а здесь показывает только 1–6 самых актуальных сейчас.':'🖐️ Авто-динамика выключена: данные меняешь ты.'}</div><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Например: взаимное движение навстречу"><div class="hp-actions"><button id="hpRecalibrate">${s.recalibrationRequested?'⏳ Переоценка — со следующим ответом':'🧭 Переоценить отношения'}</button></div><p class="hp-muted hp-micro">Внутри движка остаются все чувства 0–200. На экран выводятся только 1–6 чувств, которые сейчас реально важны.</p><div class="hp-rel-grid hp-rel-active">${visibleFeelingKeys(s).map(k=>`<div class="hp-feeling-chip"><span><i class="hp-feeling-ornament" aria-hidden="true">✿</i> ${esc(REL_LABEL[k]||k)}</span><b>${clamp(s.relation[k],0,REL_MAX)}%</b></div>`).join('')}</div>${s.feelingNote?`<div class="hp-feeling-note">💭 ${esc(s.feelingNote)}</div>`:''}${s.lastShift?`<div class="hp-shift">✨ Последний сдвиг: ${esc(s.lastShift)}</div>`:''}<details id="hpAllFeelings" class="hp-extra-feelings"><summary>🧠 Вся внутренняя палитра (${REL_FIELDS.length})</summary><p class="hp-muted hp-micro">Это скрытый движок. Обычно сюда заходить не нужно; можно раскрыть для просмотра всех значений.</p><div class="hp-rel-grid">${REL_FIELDS.map(([k,l])=>`<div class="hp-feeling-chip"><span><i class="hp-feeling-ornament" aria-hidden="true">♡</i> ${esc(l)}</span><b>${clamp(s.relation[k],0,REL_MAX)}%</b></div>`).join('')}</div></details><div class="hp-inner-mini"><h4>🧠 Что сейчас внутри</h4>${innerField('mood','Настроение','Например: спокойная решимость, тревога, азарт...')}${innerField('motives','Мотивы','Почему персонаж сейчас действует именно так...')}</div><p class="hp-muted hp-tip">Модель сама решает, какие чувства сейчас активны. Если обида, страсть, ревность, дружба или другое состояние действительно стали важны — оно появится среди верхних 1–6 показателей.</p></div>`)}
       ${page('spark',`<div class="hp-hot-card"><h3>❤️‍🔥 Искра / кинки</h3><div class="hp-row"><label>Интенсивность <b id="hpIntensityVal">${s.kinkIntensity}</b><input id="hpIntensity" type="range" min="0" max="100" value="${s.kinkIntensity}"></label><label>Шанс авто-искра <b id="hpChanceVal">${s.kinkChance}%</b><input id="hpChance" type="range" min="0" max="100" value="${s.kinkChance}"></label></div>
       <div class="hp-subtitle">Постоянные предпочтения персонажа</div><div class="hp-chip-grid">${KINK_LIBRARY.map(([k,l])=>`<button class="hp-chip ${prefSet.has(k)?'on':''}" data-kink="${k}">${l}</button>`).join('')}${(s.customKinks||[]).map(k=>`<button class="hp-chip hp-custom-chip ${k.enabled!==false?'on':''}" data-custom-enabled-chip="${esc(k.id)}" title="${esc(k.description||'')}">✍️ ${esc(k.name)}</button>`).join('')}</div>
       <div class="hp-actions"><button id="hpScanCard">✨ Проверить карточку локально</button></div><p class="hp-muted">Без API и без отдельного запроса: HeartPulse читает текст карточки текущего персонажа и ищет известные признаки.</p>
@@ -953,6 +977,7 @@ async function scanAndStoreCard(){
   const s=getState();
   s.lastCardScan=found;
   s.lastCardScanAt=now();
+  storeCardAnamnesis(found,s.lastCardScanAt);
   if(found.length) s.kinks=[...new Set([...s.kinks,...found])];
   await saveState();
   if(found.length) toast(`Карточка проверена: найдено ${found.length}`,'success');

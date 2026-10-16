@@ -312,3 +312,10 @@
 .hp-feeling-chip b{flex:none;color:#f0a8e5;font-variant-numeric:tabular-nums;font-size:14px}
 .hp-extra-feelings .hp-rel-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
 @media(max-width:370px){.hp-rel-grid,.hp-extra-feelings .hp-rel-grid{grid-template-columns:1fr!important}}
+
+/* HeartPulse compact read-only pulse: small type and gentle ornaments. */
+.hp-feeling-chip{font-size:11px!important;padding:6px 8px!important;gap:4px!important;border-radius:10px!important}
+.hp-feeling-chip span{font-size:11px!important;line-height:1.2!important}
+.hp-feeling-chip b{font-size:12px!important;white-space:nowrap}
+.hp-feeling-ornament{font-style:normal;color:#f0a8e5;font-size:12px;margin-right:2px}
+.hp-rel-grid{gap:5px!important}
