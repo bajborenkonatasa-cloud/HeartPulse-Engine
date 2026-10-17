@@ -6,7 +6,7 @@
   "js": "index.js",
   "css": "style.css",
   "author": "bajborenkonatasa-cloud + ChatGPT",
-  "version": "0.9.9.14-ups-novel-compat",
+  "version": "0.9.9.15-auto-spark-fix",
   "homePage": "https://github.com/bajborenkonatasa-cloud/HeartPulse-Engine",
   "auto_update": false
 }
