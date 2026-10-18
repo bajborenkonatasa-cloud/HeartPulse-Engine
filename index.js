@@ -242,6 +242,21 @@ function currentChatKey(){
   return `${char}:${String(chat)}`.replace(/[^a-zA-Z0-9_.:-]/g,'_').slice(0,220);
 }
 function backupKey(){ return BACKUP_PREFIX + currentChatKey(); }
+// NPC portraits are chat-specific and kept separately from model-generated NPC data.
+// This prevents a metadata refresh or NPC packet from silently erasing a manual portrait.
+const NPC_PORTRAIT_PREFIX='heartpulse_npc_portraits_v1:';
+function portraitKey(){return NPC_PORTRAIT_PREFIX+currentChatKey();}
+function readNpcPortraits(){try{return safeParse(localStorage.getItem(portraitKey())||'')||{};}catch{return {};}}
+function writeNpcPortrait(id,avatar){
+  try{const portraits=readNpcPortraits();portraits[id]=avatar;localStorage.setItem(portraitKey(),JSON.stringify(portraits));return true;}
+  catch(e){console.warn('[HeartPulse] portrait local save failed',e);return false;}
+}
+function restoreNpcPortraits(state){
+  const portraits=readNpcPortraits();
+  for(const n of state.npc||[]){if(n?.id && typeof portraits[n.id]==='string')n.avatar=portraits[n.id];}
+  return state;
+}
+
 // Custom Spark preferences are character-level, not chat-level: once the user
 // saves one for a character it should be available in every chat/branch with
 // that same character. The roleplay state itself remains chat/branch scoped.
@@ -353,7 +368,7 @@ function getState(){
   let chosen = meta;
   if(!chosen && backup) chosen=backup;
   else if(chosen && backup && Number(backup.updatedAt||0) > Number(chosen.updatedAt||0)) chosen=backup;
-  const s=stateMerge(chosen);
+  const s=restoreNpcPortraits(stateMerge(chosen));
   // v0.9.9.13: custom kinks are USER-GLOBAL data, never chat/branch state.
   // A checkpoint or old chat snapshot may contain a stale customKinks array; ignore it.
   // The fixed global store is the only authority shown in every character/chat.
@@ -1058,7 +1073,7 @@ function bind(){
         const output=document.createElement('canvas');output.width=256;output.height=256;
         draw(output,output.getContext('2d'));
         const data=output.toDataURL('image/jpeg',0.82);
-        if(target){const state=getState(),npc=(state.npc||[]).find(n=>n.id===target);if(!npc){toast('NPC не найден','warning');close();return;}npc.avatar=data;state.updatedAt=now();writeBackup(state);try{await ctx()?.saveMetadata?.();}catch(e){console.warn('[HeartPulse] avatar metadata',e);}await refreshPrompt();close();render();toast('Аватар сохранён','success');}
+        if(target){const state=getState(),npc=(state.npc||[]).find(n=>n.id===target);if(!npc){toast('NPC не найден','warning');close();return;}npc.avatar=data;const portraitStored=writeNpcPortrait(npc.id,data);await persistExactState(state);close();render();toast(portraitStored?'Аватар сохранён для этого чата':'Аватар сохранён в чате, но локальная копия недоступна','success');}
         else{const input=q('#hpNpcAvatar');if(input)input.value=data;close();toast('Аватар подготовлен — нажми «Сохранить NPC»','success');}
       }catch(err){console.error('[HeartPulse] crop failed',err);toast('Не удалось обработать фото','error');}
     };
@@ -1071,11 +1086,12 @@ function bind(){
     const relation={}; for(const k of ['trust','affection','desire','irritation','fear','respect']) relation[k]=clamp(q('#hpNpcRel_'+k)?.value||0,0,REL_MAX);
     const item=normalizeNpc({id:editId||old.id||makeId(),name,state:q('#hpNpcState')?.value?.trim()||'',mood:q('#hpNpcMood')?.value?.trim()||'',motive:q('#hpNpcMotive')?.value?.trim()||'',goal:q('#hpNpcGoal')?.value?.trim()||'',avatar:q('#hpNpcAvatar')?.value?.trim()||'',ties:q('#hpNpcTies')?.value?.trim()||'',opinion:q('#hpNpcOpinion')?.value?.trim()||'',status:q('#hpNpcStatus')?.value?.trim()||'',relation},old);
     const idx=(s.npc||[]).findIndex(n=>n.id===item.id); if(idx>=0)s.npc[idx]=item; else { const byName=(s.npc||[]).findIndex(n=>String(n.name||'').toLowerCase()===name.toLowerCase()); if(byName>=0)s.npc[byName]=normalizeNpc(item,s.npc[byName]); else s.npc.unshift(item); }
+    if(item.avatar && item.id)writeNpcPortrait(item.id,item.avatar);
     await saveState(); toast(`NPC сохранён: ${name}`,'success'); render();
   });
   q('#hpNpcCancel')?.addEventListener('click',clearNpcForm);
   document.querySelectorAll('[data-npc-edit]').forEach(b=>b.addEventListener('click',()=>{ const s=getState(),n=(s.npc||[]).find(x=>x.id===b.dataset.npcEdit); if(!n)return; q('#hpNpcEditId').value=n.id||''; q('#hpNpcName').value=n.name||''; q('#hpNpcState').value=n.state||''; q('#hpNpcMood').value=n.mood||''; q('#hpNpcMotive').value=n.motive||''; q('#hpNpcGoal').value=n.goal||''; q('#hpNpcAvatar').value=n.avatar||''; q('#hpNpcTies').value=n.ties||''; q('#hpNpcOpinion').value=n.opinion||''; q('#hpNpcStatus').value=n.status||''; q('#hpNpcEditor').open=true; for(const k of ['trust','affection','desire','irritation','fear','respect']) q('#hpNpcRel_'+k).value=clamp(n.relation?.[k]||0,0,REL_MAX); q('#hpNpcName')?.scrollIntoView({behavior:'smooth',block:'center'}); }));
-  document.querySelectorAll('[data-npc-del]').forEach(b=>b.addEventListener('click',async()=>{ const s=getState(),n=(s.npc||[]).find(x=>x.id===b.dataset.npcDel); if(!n)return; if(!window.confirm(`Удалить NPC «${n.name}» из памяти HeartPulse?`))return; s.npc=s.npc.filter(x=>x.id!==b.dataset.npcDel); await saveState(); toast(`NPC удалён: ${n.name}`,'success'); render(); }));
+  document.querySelectorAll('[data-npc-del]').forEach(b=>b.addEventListener('click',async()=>{ const s=getState(),n=(s.npc||[]).find(x=>x.id===b.dataset.npcDel); if(!n)return; if(!window.confirm(`Удалить NPC «${n.name}» из памяти HeartPulse?`))return; s.npc=s.npc.filter(x=>x.id!==b.dataset.npcDel);try{const portraits=readNpcPortraits();delete portraits[b.dataset.npcDel];localStorage.setItem(portraitKey(),JSON.stringify(portraits));}catch{} await saveState(); toast(`NPC удалён: ${n.name}`,'success'); render(); }));
   [['#hpEnabled','enabled'],['#hpAutoTrack','autoTrack'],['#hpInjectRel','injectRelation'],['#hpInjectKinks','injectKinks'],['#hpInjectIntent','injectIntentions']].forEach(([id,key])=>q(id)?.addEventListener('change',async e=>{getState()[key]=e.target.checked; await saveState(); renderModelPreview();}));
   q('#hpManual')?.addEventListener('change',async e=>{getState().manualDirective=e.target.value; await saveState();});
   q('#hpOneShot')?.addEventListener('change',async e=>{getState().oneShotDirective=e.target.value; await saveState();});
