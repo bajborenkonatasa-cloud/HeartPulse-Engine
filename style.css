@@ -411,3 +411,16 @@
 #hpPanel .hp-npc-action-menu,#hpOverlay .hp-npc-action-menu{position:absolute;right:0;top:calc(100% + 5px);z-index:15;min-width:128px;padding:5px;border:1px solid #765783;background:#302439;border-radius:10px;box-shadow:0 8px 22px #0008;display:flex;flex-direction:column;gap:4px}
 #hpPanel .hp-npc-action-menu button,#hpOverlay .hp-npc-action-menu button{font-size:12px!important;padding:7px 9px!important;white-space:nowrap;text-align:left}
 #hpPanel .hp-crop-window,#hpOverlay .hp-crop-window{display:block;object-fit:initial!important;touch-action:none;max-width:100%;box-sizing:border-box}
+
+/* NPC visual polish v0.9.9.18: names, neon roles, personal views */
+#hpPanel .hp-npc-toolbar h3,#hpOverlay .hp-npc-toolbar h3{font-size:13px!important;letter-spacing:.1px!important}
+#hpPanel .hp-npc-identity b.hp-npc-display-name,#hpOverlay .hp-npc-identity b.hp-npc-display-name{font-family:Georgia,"Times New Roman",serif!important;font-style:italic!important;font-size:21px!important;font-weight:600!important;line-height:1.15!important;color:#f5b8e7!important;text-shadow:0 0 8px rgba(247,117,217,.3)!important;letter-spacing:.2px!important}
+#hpPanel .hp-npc:nth-child(4n+2) .hp-npc-display-name,#hpOverlay .hp-npc:nth-child(4n+2) .hp-npc-display-name{color:#ffe29b!important;text-shadow:0 0 8px #ffbb5570!important}
+#hpPanel .hp-npc:nth-child(4n+3) .hp-npc-display-name,#hpOverlay .hp-npc:nth-child(4n+3) .hp-npc-display-name{color:#b6d9ff!important;text-shadow:0 0 8px #81aaff70!important}
+#hpPanel .hp-npc:nth-child(4n+4) .hp-npc-display-name,#hpOverlay .hp-npc:nth-child(4n+4) .hp-npc-display-name{color:#c3f4d7!important;text-shadow:0 0 8px #6deeb070!important}
+#hpPanel .hp-npc-identity small.hp-npc-status,#hpOverlay .hp-npc-identity small.hp-npc-status{display:block!important;font-size:12px!important;font-weight:700!important;color:#f2dcff!important;text-shadow:0 0 5px #d071ff,0 0 12px #8e44ff!important;line-height:1.35!important;margin-top:3px!important}
+#hpPanel .hp-npc>small.hp-npc-opinion,#hpOverlay .hp-npc>small.hp-npc-opinion{color:#f6d38c!important;text-shadow:0 0 5px rgba(255,194,77,.22)!important;font-style:italic!important;font-size:12px!important}
+#hpPanel .hp-npc>small.hp-npc-ties,#hpOverlay .hp-npc>small.hp-npc-ties{color:#b6dff3!important;font-size:12px!important}
+#hpPanel .hp-npc>small:not(.hp-npc-opinion):not(.hp-npc-ties),#hpOverlay .hp-npc>small:not(.hp-npc-opinion):not(.hp-npc-ties){font-size:11.5px!important;line-height:1.43!important}
+#hpPanel .hp-npc-actions summary,#hpOverlay .hp-npc-actions summary{font-size:14px!important;padding:0 4px!important;min-width:23px!important;min-height:23px!important;display:flex!important;align-items:center!important;justify-content:center!important;border-radius:7px!important;opacity:.72!important}
+#hpPanel .hp-npc-actions,#hpOverlay .hp-npc-actions{align-self:flex-start!important;margin-top:-3px!important;margin-right:-4px!important}
