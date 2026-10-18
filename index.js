@@ -1035,7 +1035,7 @@ function bind(){
     const url=URL.createObjectURL(file);
     const shade=document.createElement('div');shade.className='hp-crop-overlay';
     shade.innerHTML='<div class="hp-crop-dialog"><h3>📷 Аватар NPC</h3><p>Двигай фотографию пальцем и настрой масштаб.</p><div class="hp-crop-window"><img alt="Предпросмотр аватара"></div><label>Масштаб <input class="hp-crop-zoom" type="range" min="1" max="3" step="0.05" value="1"></label><div class="hp-crop-actions"><button type="button" class="hp-crop-cancel">Отмена</button><button type="button" class="hp-crop-apply">✓ Сохранить</button></div></div>';
-    (document.querySelector('#hpOverlay') || document.body).appendChild(shade);
+    (document.querySelector('#hpPanel') || document.querySelector('#hpOverlay') || document.body).appendChild(shade);
     const img=shade.querySelector('img'),frame=shade.querySelector('.hp-crop-window'),zoom=shade.querySelector('.hp-crop-zoom');
     let ox=0,oy=0,scale=1,down=null;
     const paint=()=>{img.style.transform=`translate(${ox}px,${oy}px) scale(${scale})`;};
@@ -1047,10 +1047,10 @@ function bind(){
     const close=()=>{shade.remove();URL.revokeObjectURL(url);};
     shade.querySelector('.hp-crop-cancel').onclick=close;
     shade.querySelector('.hp-crop-apply').onclick=async()=>{
-      try{await img.decode();const canvas=document.createElement('canvas');canvas.width=256;canvas.height=256;const ctx=canvas.getContext('2d');
+      try{await img.decode();const canvas=document.createElement('canvas');canvas.width=256;canvas.height=256;const canvasCtx=canvas.getContext('2d');
         const side=Math.min(img.naturalWidth,img.naturalHeight);const srcSize=side/scale;const unit=side/frame.clientWidth;
         const sx=(img.naturalWidth-side)/2-ox*unit/scale;const sy=(img.naturalHeight-side)/2-oy*unit/scale;
-        ctx.drawImage(img,sx,sy,srcSize,srcSize,0,0,256,256);const data=canvas.toDataURL('image/jpeg',0.78);
+        canvasCtx.drawImage(img,sx,sy,srcSize,srcSize,0,0,256,256);const data=canvas.toDataURL('image/jpeg',0.78);
         if(target){const state=getState(),npc=(state.npc||[]).find(n=>n.id===target);if(!npc){toast('NPC не найден','warning');close();return;}npc.avatar=data;state.updatedAt=now();writeBackup(state);try{await ctx()?.saveMetadata?.();}catch(e){console.warn('[HeartPulse] avatar metadata',e);}await refreshPrompt();close();render();toast('Аватар сохранён','success');}
         else{const input=q('#hpNpcAvatar');if(input)input.value=data;close();toast('Аватар подготовлен — нажми «Сохранить NPC»','success');}
       }catch(err){console.error('[HeartPulse] crop failed',err);toast('Не удалось обработать фото','error');}

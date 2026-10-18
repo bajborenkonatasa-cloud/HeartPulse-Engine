@@ -387,3 +387,16 @@
 #hpOverlay .hp-npc>small{color:#e5dbe9!important;opacity:1!important;font-size:12.5px!important;line-height:1.48!important}
 #hpOverlay .hp-npc>span{color:#f7eef8!important;opacity:1!important}
 #hpOverlay .hp-npc-identity small{color:#e3cce9!important}
+
+/* NPC crop v0.9.9.16: child of panel, never sibling behind panel */
+#hpPanel > .hp-crop-overlay {
+ position:absolute!important; inset:0!important; z-index:2147483647!important;
+ display:flex!important; justify-content:center!important; align-items:center!important;
+ padding:12px!important; box-sizing:border-box!important; overflow-y:auto!important;
+ background:rgba(8,5,14,.94)!important; touch-action:pan-y;
+}
+#hpPanel > .hp-crop-overlay .hp-crop-dialog {
+ width:min(370px,100%)!important; max-height:calc(100dvh - 32px)!important;
+ overflow-y:auto!important; margin:auto!important; box-sizing:border-box!important;
+}
+#hpPanel > .hp-crop-overlay .hp-crop-window {width:min(250px,65vw,30dvh)!important;height:min(250px,65vw,30dvh)!important}
