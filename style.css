@@ -482,3 +482,34 @@
 .hp-long-goals-title span{color:#ffd06d;text-shadow:0 0 7px #ffca5b,0 0 12px #ffca5b;font-size:17px}
 .hp-hero-head{margin-bottom:5px!important}
 .hp-hero-card .hp-rel-grid{margin-top:6px!important;margin-bottom:9px!important}
+
+/* v0.9.9.25 — dense mobile profile, preserved engine/storage */
+#hpPanel .hp-head{padding:7px 13px!important;min-height:0!important;align-items:center!important;gap:7px!important}
+#hpPanel .hp-head h2{font-size:19px!important;line-height:1.1!important;margin:0!important}
+#hpPanel .hp-close{width:30px!important;height:30px!important;font-size:19px!important;border-radius:10px!important;flex-shrink:0!important}
+#hpPanel .hp-tabs{padding:5px 7px!important}
+#hpPanel .hp-body{padding:7px!important}
+#hpPanel .hp-hero-card{padding:9px 11px 11px!important;border-radius:17px!important}
+#hpPanel .hp-hero-head{gap:9px!important;margin-bottom:3px!important}
+#hpPanel .hp-hero-avatar-pick{width:68px!important;height:68px!important;flex-basis:68px!important;border-radius:14px!important}
+#hpPanel .hp-hero-card .hp-rel-grid{gap:4px!important;margin:4px 0 5px!important}
+#hpPanel .hp-hero-card .hp-feeling-chip{padding:4px 7px!important;min-height:0!important;line-height:1.2!important}
+#hpPanel .hp-hero-line,#hpPanel .hp-hero-goals .hp-hero-line{padding:3px 0 4px!important;gap:0!important;line-height:1.28!important}
+#hpPanel .hp-hero-line span{font-size:12.5px!important;line-height:1.28!important;color:#e9dbf8!important}
+#hpPanel .hp-hero-line b{font-size:12.5px!important;line-height:1.25!important}
+#hpPanel .hp-hero-goals{margin-top:0!important}
+#hpPanel .hp-hero-goals .hp-subtitle{margin:4px 0 2px!important;font-size:12px!important}
+#hpPanel .hp-hero-goals .hp-intent{padding:3px 0!important;gap:4px!important;line-height:1.25!important}
+#hpPanel .hp-hero-goals .hp-intent button{font-size:10px!important;padding:4px 5px!important}
+#hpPanel .hp-hero-line>span::before{content:'«';color:#e5b5f5}
+#hpPanel .hp-hero-line>span::after{content:'»';color:#e5b5f5}
+#hpPanel .hp-npc-toolbar{margin-bottom:7px!important;gap:6px!important}
+#hpPanel .hp-npc-toolbar h3{font-size:15px!important;line-height:1.2!important;margin:0!important}
+#hpPanel .hp-npc-toolbar .hp-micro{font-size:10px!important}
+#hpPanel .hp-npc-settings{font-size:15px!important;padding:3px 6px!important;line-height:1.1!important;border-radius:8px!important;min-width:27px!important;min-height:27px!important}
+#hpPanel .hp-journal-title h3{font-size:15px!important;margin-bottom:4px!important}
+#hpPanel .hp-journal-card{padding:12px!important}
+#hpPanel .hp-journal-tools{gap:5px!important;margin:6px 0!important}
+#hpPanel .hp-journal-tools button{font-size:11px!important;padding:6px 8px!important}
+#hpPanel .hp-journal-card .hp-log{padding:8px!important;margin:5px 0!important;font-size:12px!important;line-height:1.35!important}
+@media(max-width:600px){#hpPanel .hp-tabs button{font-size:11.5px!important;padding:6px 8px!important}}
