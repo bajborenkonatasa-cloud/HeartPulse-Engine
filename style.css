@@ -427,3 +427,21 @@
 
 /* v0.9.9.19 — compact NPC names without changing portrait sizing */
 #hpPanel .hp-npc-identity b.hp-npc-display-name,#hpOverlay .hp-npc-identity b.hp-npc-display-name{font-size:16px!important;line-height:1.25!important;letter-spacing:0!important}
+
+/* v0.9.9.21: unified protagonist page, mobile-first */
+.hp-hero-card{padding:15px 14px 19px;border-radius:21px;border:1px solid rgba(189,125,220,.28);background:linear-gradient(155deg,rgba(82,44,97,.30),rgba(16,24,29,.76));color:#f4eaf5}
+.hp-hero-head{display:flex;gap:12px;align-items:center;margin-bottom:10px}
+.hp-hero-avatar-pick{position:relative;display:grid;place-items:center;width:78px;height:78px;flex:0 0 78px;border-radius:18px;overflow:hidden;border:1px solid #ab75c2;background:linear-gradient(145deg,#76418a,#362344);font:italic 30px Georgia,serif;cursor:pointer}
+.hp-hero-avatar-pick input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;z-index:2}
+.hp-hero-avatar-pick img{width:100%;height:100%;object-fit:cover}
+.hp-hero-heading{min-width:0;flex:1}.hp-hero-heading h3{font:italic bold 19px Georgia,serif!important;margin:0 0 5px!important;color:#f4bce9}.hp-hero-heading span{font-size:12px;color:#bcb0c5}
+.hp-hero-recalibrate{border:1px solid #6c506e;border-radius:10px;background:#302239;color:#e5c9e8;padding:5px 9px;font-size:18px}
+.hp-hero-rel-label{font-size:12px;color:#bba9c5;margin:3px 0 7px}
+.hp-hero-card .hp-rel-grid{gap:7px;margin:9px 0 13px}.hp-hero-card .hp-feeling-chip{padding:8px 9px;font-size:12px;border-radius:12px}
+.hp-hero-line{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.075);display:grid;gap:3px;font-size:13px;line-height:1.4}.hp-hero-line b{font-size:12px;color:#dbb5e4}.hp-hero-line span{color:#f1e8f3}
+.hp-hero-divider{height:1px;background:rgba(220,155,228,.28);margin:15px 0 12px}.hp-hero-section-title{font-size:16px;margin:0 0 8px;color:#e8bde8}
+.hp-hero-goals .hp-subtitle{font-size:13px;margin:13px 0 6px}.hp-hero-goals .hp-intent{font-size:12px;padding:8px 0}.hp-hero-goals .hp-inline{margin-top:8px}.hp-hero-goals .hp-input{font-size:12px;padding:9px}.hp-hero-goals button{font-size:12px;padding:7px 9px}
+.hp-hero-manual{margin:7px 0;font-size:11px;color:#a89aaf}.hp-hero-manual>summary{cursor:pointer;list-style:none;opacity:.8}.hp-hero-manual .hp-inner-text{min-height:65px}
+.hp-head h2{font-size:19px!important}.hp-soft-card h3,.hp-hot-card h3,.hp-gold-card h3,.hp-model-card h3{font-size:16px!important}
+.hp-journal-card .hp-muted,.hp-model-card .hp-muted{font-size:11px}
+@media(max-width:600px){.hp-hero-card{padding:12px}.hp-hero-avatar-pick{width:72px;height:72px;flex-basis:72px}.hp-hero-heading h3{font-size:18px!important}.hp-hero-card .hp-rel-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
