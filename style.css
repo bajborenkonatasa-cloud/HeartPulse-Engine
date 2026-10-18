@@ -327,3 +327,16 @@
 .hp-hot-card .hp-chip{border-radius:11px!important;padding:6px 7px!important;min-height:30px!important;font-size:12px!important}
 .hp-hot-card .hp-chip-grid{gap:5px!important;margin-bottom:10px!important}
 .hp-custom-card,.hp-auto-box{border-radius:12px!important}
+
+/* HeartPulse NPC Gallery: additive UI only */
+.hp-npc-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}.hp-npc-toolbar h3{margin:0}
+.hp-npc-editor{border:1px solid rgba(190,125,238,.25);border-radius:15px;background:rgba(42,25,55,.4);padding:10px 12px;margin-bottom:16px}
+.hp-npc-editor>summary{cursor:pointer;font-weight:650;color:#e9d7ff;padding:7px 4px;list-style:none}.hp-npc-editor>summary::-webkit-details-marker{display:none}
+.hp-npc-editor[open]>summary{margin-bottom:12px}.hp-npc-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px}
+.hp-npc-list .hp-npc{margin:0;min-width:0;background:linear-gradient(155deg,rgba(73,45,84,.52),rgba(26,28,39,.87));border:1px solid rgba(204,147,230,.23);border-radius:17px;padding:14px;box-shadow:0 7px 24px rgba(0,0,0,.15)}
+.hp-npc-identity{display:flex;align-items:center;gap:10px;min-width:0}.hp-npc-identity>div{min-width:0;overflow-wrap:anywhere}.hp-npc-identity small{display:block;opacity:.75;margin-top:3px}
+.hp-npc-avatar{width:52px;height:52px;flex:none;object-fit:cover;border-radius:15px;border:1px solid rgba(235,178,255,.4);box-shadow:0 3px 14px rgba(125,55,151,.2)}
+.hp-npc-avatar-fallback{display:flex;align-items:center;justify-content:center;background:linear-gradient(140deg,#703c8c,#39294b);font-size:23px;color:#fff}
+.hp-npc-ties{color:#c9a6ff!important}.hp-npc-extra{display:grid;gap:10px;margin:12px 0}.hp-npc-extra label{display:grid;gap:5px;font-size:12px;opacity:.95}.hp-npc-file{cursor:pointer}.hp-npc-file input{max-width:100%;font-size:12px}
+@media(max-width:530px){.hp-npc-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.hp-npc-list .hp-npc{padding:10px}.hp-npc-avatar{width:42px;height:42px;border-radius:12px}.hp-npc-head{align-items:flex-start}.hp-npc-identity{gap:6px}}
+@media(max-width:360px){.hp-npc-list{grid-template-columns:1fr}}
