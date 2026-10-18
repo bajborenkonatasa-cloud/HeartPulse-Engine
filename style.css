@@ -465,3 +465,12 @@
 .hp-hero-section-title{font-size:15px!important}
 .hp-hero-goals .hp-intent{border-bottom:1px solid #67436d55}
 .hp-hero-avatar-pick{width:80px;height:80px;flex-basis:80px}
+
+/* v0.9.9.23 — compact hero profile: ornaments only beside first section headings */
+.hp-hero-line{padding:7px 0 9px!important;gap:2px!important}
+.hp-hero-line::after{content:none!important;display:none!important}
+.hp-hero-card > .hp-hero-line > b{display:flex;align-items:center;gap:9px;min-width:0}
+.hp-hero-card > .hp-hero-line > b::after{content:'── ✿ ── ♡ ── ✧ ──';color:#b98cc5;opacity:.8;font-size:10px;letter-spacing:0;white-space:nowrap;text-shadow:none;font-weight:400;overflow:hidden}
+.hp-hero-goals{margin-top:3px}
+.hp-hero-goals .hp-hero-line{padding:7px 0 9px!important}
+.hp-hero-goals .hp-subtitle{margin-top:9px!important}
