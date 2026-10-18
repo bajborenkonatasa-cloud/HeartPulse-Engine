@@ -474,3 +474,11 @@
 .hp-hero-goals{margin-top:3px}
 .hp-hero-goals .hp-hero-line{padding:7px 0 9px!important}
 .hp-hero-goals .hp-subtitle{margin-top:9px!important}
+
+/* v0.9.9.24 — status and consistent compact ornaments */
+.hp-hero-status{display:block!important;color:#ffe29b!important;font-size:12px!important;font-weight:700;line-height:1.35;text-shadow:0 0 5px rgba(255,191,62,.85),0 0 13px rgba(255,188,48,.45);overflow-wrap:anywhere}
+.hp-hero-card > .hp-hero-goals .hp-hero-line > b{display:flex;align-items:center;gap:7px;min-width:0}
+.hp-hero-card > .hp-hero-goals .hp-hero-line > b::after{content:'── ✿ ── ♡ ── ✧ ──';color:#b98cc5;opacity:.8;font-size:10px;letter-spacing:0;white-space:nowrap;font-weight:400;text-shadow:none;overflow:hidden}
+.hp-long-goals-title span{color:#ffd06d;text-shadow:0 0 7px #ffca5b,0 0 12px #ffca5b;font-size:17px}
+.hp-hero-head{margin-bottom:5px!important}
+.hp-hero-card .hp-rel-grid{margin-top:6px!important;margin-bottom:9px!important}
