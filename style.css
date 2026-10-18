@@ -375,3 +375,15 @@
 .hp-npc-head>div:last-child button{font-size:12px!important;padding:4px 6px!important;min-width:29px!important}
 .hp-npc-list .hp-npc{padding:12px!important}
 .hp-npc-toolbar{margin-bottom:8px!important}
+
+/* v0.9.9.15: NPC mobile crop dialog above HeartPulse overlay */
+#hpOverlay>.hp-crop-overlay{position:absolute!important;inset:0!important;z-index:100!important;display:flex!important;align-items:center!important;justify-content:center!important;overflow-y:auto!important;overscroll-behavior:contain;padding:12px!important;box-sizing:border-box!important}
+#hpOverlay .hp-crop-dialog{box-sizing:border-box!important;width:min(370px,calc(100vw - 24px))!important;max-height:calc(100dvh - 28px)!important;overflow-y:auto!important;flex-shrink:1!important;margin:auto!important;padding:14px!important}
+#hpOverlay .hp-crop-window{width:min(240px,62vw,29dvh)!important;height:min(240px,62vw,29dvh)!important;margin:8px auto!important}
+#hpOverlay .hp-crop-actions{flex-wrap:wrap!important}
+#hpOverlay .hp-crop-dialog h3{font-size:18px!important}
+#hpOverlay .hp-npc-toolbar h3{font-size:17px!important;line-height:1.3!important;margin:0!important}
+#hpOverlay .hp-npc-settings{font-size:15px!important;padding:4px 7px!important;min-width:34px!important;min-height:34px!important;border-radius:9px!important}
+#hpOverlay .hp-npc>small{color:#e5dbe9!important;opacity:1!important;font-size:12.5px!important;line-height:1.48!important}
+#hpOverlay .hp-npc>span{color:#f7eef8!important;opacity:1!important}
+#hpOverlay .hp-npc-identity small{color:#e3cce9!important}

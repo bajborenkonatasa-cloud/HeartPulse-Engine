@@ -1035,7 +1035,7 @@ function bind(){
     const url=URL.createObjectURL(file);
     const shade=document.createElement('div');shade.className='hp-crop-overlay';
     shade.innerHTML='<div class="hp-crop-dialog"><h3>📷 Аватар NPC</h3><p>Двигай фотографию пальцем и настрой масштаб.</p><div class="hp-crop-window"><img alt="Предпросмотр аватара"></div><label>Масштаб <input class="hp-crop-zoom" type="range" min="1" max="3" step="0.05" value="1"></label><div class="hp-crop-actions"><button type="button" class="hp-crop-cancel">Отмена</button><button type="button" class="hp-crop-apply">✓ Сохранить</button></div></div>';
-    document.body.appendChild(shade);
+    (document.querySelector('#hpOverlay') || document.body).appendChild(shade);
     const img=shade.querySelector('img'),frame=shade.querySelector('.hp-crop-window'),zoom=shade.querySelector('.hp-crop-zoom');
     let ox=0,oy=0,scale=1,down=null;
     const paint=()=>{img.style.transform=`translate(${ox}px,${oy}px) scale(${scale})`;};
