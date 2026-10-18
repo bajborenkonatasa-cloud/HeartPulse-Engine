@@ -445,3 +445,23 @@
 .hp-head h2{font-size:19px!important}.hp-soft-card h3,.hp-hot-card h3,.hp-gold-card h3,.hp-model-card h3{font-size:16px!important}
 .hp-journal-card .hp-muted,.hp-model-card .hp-muted{font-size:11px}
 @media(max-width:600px){.hp-hero-card{padding:12px}.hp-hero-avatar-pick{width:72px;height:72px;flex-basis:72px}.hp-hero-heading h3{font-size:18px!important}.hp-hero-card .hp-rel-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* v0.9.9.22 — unified protagonist: one clean read-only profile */
+.hp-hero-card{position:relative;overflow:visible}
+.hp-hero-tools{display:flex;flex-direction:column;gap:5px;align-items:center;align-self:flex-start;flex:0 0 32px}
+.hp-hero-recalibrate{font-size:13px!important;padding:3px 6px!important;width:30px;height:29px;line-height:1}
+.hp-hero-settings{position:static;margin:0!important;padding:0!important;border:0!important}
+.hp-hero-settings>summary{list-style:none;display:grid;place-items:center;cursor:pointer;width:30px;height:30px;border:1px solid #6c506e;border-radius:9px;background:#302239;font-size:17px}
+.hp-hero-settings>summary::-webkit-details-marker{display:none}
+.hp-hero-settings-panel{position:absolute;z-index:40;top:55px;left:9px;right:9px;max-height:min(65dvh,580px);overflow:auto;padding:15px;background:#231b2b;border:1px solid #9b6aab;border-radius:16px;box-shadow:0 18px 45px #000b;color:#f8effa}
+.hp-hero-settings-panel h4{font-size:14px!important;margin:0 0 12px!important;color:#e9b6fa}
+.hp-hero-settings-panel label{display:block;font-size:12px;margin:10px 0}
+.hp-hero-settings-panel .hp-inner-text{width:100%;min-height:54px;font-size:13px}
+.hp-hero-settings-panel .hp-rel-grid{margin-top:8px}
+.hp-hero-line{border-bottom:0!important;position:relative;padding:12px 0 17px!important}
+.hp-hero-line:after{content:'───── ✿ ── ♡ ── ✧ ─────';position:absolute;bottom:0;left:0;right:0;text-align:center;color:#c48bd2;opacity:.67;font-size:10px;letter-spacing:1px;white-space:nowrap;overflow:hidden}
+.hp-hero-line b,.hp-hero-section-title,.hp-hero-goals .hp-subtitle{color:#e9b9ff!important;text-shadow:0 0 6px #bb55d3a8,0 0 13px #b75fe177;font-weight:700}
+.hp-hero-line b{font-size:13px!important}
+.hp-hero-line span{color:#f5edf8!important;font-size:13px;line-height:1.48}
+.hp-hero-section-title{font-size:15px!important}
+.hp-hero-goals .hp-intent{border-bottom:1px solid #67436d55}
+.hp-hero-avatar-pick{width:80px;height:80px;flex-basis:80px}

@@ -902,18 +902,45 @@ async function parseLatestModelState(reason='event'){
 function heroPortraitKey(){ return portraitKey()+':main-character'; }
 function heroPortraitGet(){ try{return localStorage.getItem(heroPortraitKey())||'';}catch{return '';} }
 async function heroPortraitSet(file){
-  if(!file || !file.type.startsWith('image/')) return;
-  const url=URL.createObjectURL(file);
-  try{
-    const img=new Image(); await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=reject;img.src=url;});
-    const canvas=document.createElement('canvas'); canvas.width=256;canvas.height=256;
-    const g=canvas.getContext('2d'); const side=Math.min(img.naturalWidth,img.naturalHeight);
-    g.drawImage(img,(img.naturalWidth-side)/2,(img.naturalHeight-side)/2,side,side,0,0,256,256);
-    const data=canvas.toDataURL('image/jpeg',0.78);
-    localStorage.setItem(heroPortraitKey(),data); render();
-  }catch(e){console.warn('[HeartPulse] Hero avatar',e);toast('Не удалось сохранить портрет','error');}
-  finally{URL.revokeObjectURL(url);}
+  // Use the same interactive crop editor as NPC portraits.
+  openSharedPortraitCrop(file,'__hero__');
 }
+function openSharedPortraitCrop(file,target){
+    if(!file||!file.type.startsWith('image/'))return toast('Выбери изображение','warning');
+    if(file.size>15*1024*1024)return toast('Файл больше 15 МБ','warning');
+    const url=URL.createObjectURL(file);
+    const shade=document.createElement('div');shade.className='hp-crop-overlay';
+    shade.innerHTML='<div class="hp-crop-dialog"><h3>📷 Настроить портрет</h3><p>Фото сначала показано целиком. Увеличь и передвинь его как тебе нравится — сохранится именно то, что видно в квадрате.</p><canvas class="hp-crop-window" width="300" height="300" aria-label="Обрезка аватара"></canvas><label>Масштаб <input class="hp-crop-zoom" type="range" min="1" max="4" step="0.02" value="1"></label><div class="hp-crop-actions"><button type="button" class="hp-crop-cancel">Отмена</button><button type="button" class="hp-crop-apply">✓ Сохранить</button></div></div>';
+    (document.querySelector('#hpPanel') || document.querySelector('#hpOverlay') || document.body).appendChild(shade);
+    const preview=shade.querySelector('canvas'),pctx=preview.getContext('2d'),zoom=shade.querySelector('.hp-crop-zoom');
+    const photo=new Image();let ox=0,oy=0,scale=1,down=null,ready=false;
+    const draw=(canvas,ctx)=>{
+      const side=canvas.width, fit=Math.min(side/photo.naturalWidth,side/photo.naturalHeight)*scale;
+      const w=photo.naturalWidth*fit,h=photo.naturalHeight*fit;
+      ctx.clearRect(0,0,side,side);ctx.fillStyle='#211a29';ctx.fillRect(0,0,side,side);
+      ctx.drawImage(photo,(side-w)/2+ox*side/300,(side-h)/2+oy*side/300,w,h);
+    };
+    const paint=()=>{if(ready)draw(preview,pctx);};
+    photo.onload=()=>{ready=true;paint();};photo.onerror=()=>{toast('Не удалось открыть изображение','error');close();};photo.src=url;
+    zoom.addEventListener('input',()=>{scale=Number(zoom.value);paint();});
+    preview.addEventListener('pointerdown',e=>{down={x:e.clientX,y:e.clientY,ox,oy};preview.setPointerCapture(e.pointerId);});
+    preview.addEventListener('pointermove',e=>{if(!down)return;const r=preview.getBoundingClientRect();ox=down.ox+(e.clientX-down.x)*300/r.width;oy=down.oy+(e.clientY-down.y)*300/r.height;paint();});
+    preview.addEventListener('pointerup',()=>down=null);preview.addEventListener('pointercancel',()=>down=null);
+    const close=()=>{shade.remove();URL.revokeObjectURL(url);};
+    shade.querySelector('.hp-crop-cancel').onclick=close;
+    shade.querySelector('.hp-crop-apply').onclick=async()=>{
+      try{
+        if(!ready)throw new Error('Image not ready');
+        const output=document.createElement('canvas');output.width=256;output.height=256;
+        draw(output,output.getContext('2d'));
+        const data=output.toDataURL('image/jpeg',0.82);
+        if(target==='__hero__'){try{localStorage.setItem(heroPortraitKey(),data);close();render();toast('Портрет героя сохранён для этого чата','success');}catch(err){throw err;}}
+        else if(target){const state=getState(),npc=(state.npc||[]).find(n=>n.id===target);if(!npc){toast('NPC не найден','warning');close();return;}npc.avatar=data;const portraitStored=writeNpcPortrait(npc.id,data);await persistExactState(state);close();render();toast(portraitStored?'Аватар сохранён для этого чата':'Аватар сохранён в чате, но локальная копия недоступна','success');}
+        else{const input=q('#hpNpcAvatar');if(input)input.value=data;close();toast('Аватар подготовлен — нажми «Сохранить NPC»','success');}
+      }catch(err){console.error('[HeartPulse] crop failed',err);toast('Не удалось обработать фото','error');}
+    };
+  }
+
 function panelHtml(){
   const s=getState(), name=esc(currentCharName()), ui=readUi();
   const prefSet=new Set(s.kinks), activeSet=new Set(s.activeKinks);
@@ -936,7 +963,7 @@ function panelHtml(){
     <header class="hp-head"><div><div class="hp-kicker">HEARTPULSE ENGINE · v0.9.9.11</div><h2>❤️‍🔥✨ ${name}</h2><p>Живая анкета персонажа · связь · искра · цели · NPC</p></div><button class="hp-close">×</button></header>
     <nav class="hp-tabs">${tabBtn('pulse','💗 Пульс')}${tabBtn('spark','❤️‍🔥 Искра')}${tabBtn('npc','👥 NPC')}${tabBtn('journal','📜 Журнал')}${tabBtn('model','👁 Модель')}</nav>
     <main class="hp-body">
-      ${page('pulse',`<div class="hp-hero-card"><div class="hp-hero-head"><label class="hp-hero-avatar-pick" title="Выбрать портрет главного героя"><input id="hpHeroAvatarInput" type="file" accept="image/*"><img id="hpHeroAvatarImage" src="" alt="" style="display:none"><span id="hpHeroAvatarFallback">${esc(currentCharName().slice(0,1))}</span></label><div class="hp-hero-heading"><h3>${name}</h3><span>💗 Эмоции · характер · намерения</span></div><button id="hpRecalibrate" class="hp-hero-recalibrate" title="Переоценить отношения">⟳</button></div><div class="hp-hero-rel-label">${esc(s.relationLabel||'')}</div><div class="hp-rel-grid hp-rel-active">${visibleFeelingKeys(s).map(k=>`<div class="hp-feeling-chip"><span>✿ ${esc(REL_LABEL[k]||k)}</span><b>${clamp(s.relation[k],0,REL_MAX)}%</b></div>`).join('')}</div>${s.feelingNote?`<div class="hp-hero-line"><b>💭 Эмоции</b><span>${esc(s.feelingNote)}</span></div>`:''}${s.lastShift?`<div class="hp-hero-line"><b>✨ Последний сдвиг</b><span>${esc(s.lastShift)}</span></div>`:''}<div class="hp-hero-line"><b>🎭 Настроение</b><span>${esc(s.inner?.mood||'—')}</span></div><div class="hp-hero-line"><b>🧠 Мотивы</b><span>${esc(s.inner?.motives||'—')}</span></div><details class="hp-hero-manual"><summary>⚙️ Дополнительные настройки пульса</summary><input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Состояние отношений">${innerField('mood','Настроение','...')}${innerField('motives','Мотивы','...')}<details id="hpAllFeelings" class="hp-extra-feelings"><summary>Вся палитра (${REL_FIELDS.length})</summary><div class="hp-rel-grid">${REL_FIELDS.map(([k,l])=>`<div class="hp-feeling-chip"><span>${esc(l)}</span><b>${clamp(s.relation[k],0,REL_MAX)}%</b></div>`).join('')}</div></details></details><div class="hp-hero-divider"></div><h4 class="hp-hero-section-title">🎯 Намерения</h4><div class="hp-hero-goals"><div class="hp-hero-line"><b>💬 Мнение</b><span>${esc(s.inner?.hiddenThought||'Пока нет записи')}</span></div><details class="hp-hero-manual"><summary>⚙️ Исправить мнение вручную</summary>${innerField('hiddenThought','Мнение','Личное мнение персонажа о людях или ситуации...')}</details><div class="hp-hero-line"><b>🎯 Цель сейчас</b><span>${esc(s.inner?.currentGoal||'Пока нет цели')}</span></div><details class="hp-hero-manual"><summary>⚙️ Исправить цель</summary>${innerField('currentGoal','Цель сейчас','...')}</details><div class="hp-hero-line"><b>🌙 Желание на будущее</b><span>${esc(s.inner?.futureDesire||'Пока нет записи')}</span></div><details class="hp-hero-manual"><summary>⚙️ Исправить желание</summary>${innerField('futureDesire','Желание на будущее','...')}</details><div class="hp-subtitle">📌 Долгие цели, которые нельзя забыть</div><div id="hpIntentList">${s.intentions.map(x=>`<div class="hp-intent" data-id="${esc(x.id)}"><span>${esc(x.text)}</span><button data-done="${esc(x.id)}" title="Отметить цель выполненной">✓ Готово</button><button data-del="${esc(x.id)}" title="Удалить цель без отметки о выполнении">🗑</button></div>`).join('')||'<p class="hp-muted">Пока пусто. Модель может добавить такую цель сама, либо ты добавишь вручную.</p>'}</div><div class="hp-inline"><input id="hpIntentInput" class="hp-input" placeholder="Например: подарить кольцо в подходящий момент"><button id="hpIntentAdd">＋</button></div></div></div>`)}
+      ${page('pulse',`<div class="hp-hero-card"><div class="hp-hero-head"><label class="hp-hero-avatar-pick" title="Выбрать портрет главного героя"><input id="hpHeroAvatarInput" type="file" accept="image/*"><img id="hpHeroAvatarImage" src="" alt="" style="display:none"><span id="hpHeroAvatarFallback">${esc(currentCharName().slice(0,1))}</span></label><div class="hp-hero-heading"><h3>${name}</h3><span>💗 Эмоции · характер · намерения</span></div><div class="hp-hero-tools"><details id="hpHeroSettings" class="hp-hero-settings"><summary title="Настройки и ручное редактирование">⚙️</summary><div class="hp-hero-settings-panel"><h4>Ручное редактирование</h4><label>Состояние отношений<input id="hpRelationLabel" class="hp-input" value="${esc(s.relationLabel)}" placeholder="Состояние отношений"></label>${innerField('mood','Настроение','...')}${innerField('motives','Мотивы','...')}${innerField('hiddenThought','Мнение','...')}${innerField('currentGoal','Цель сейчас','...')}${innerField('futureDesire','Желание на будущее','...')}<details id="hpAllFeelings" class="hp-extra-feelings"><summary>Вся палитра (${REL_FIELDS.length})</summary><div class="hp-rel-grid">${REL_FIELDS.map(([k,l])=>`<div class="hp-feeling-chip"><span>${esc(l)}</span><b>${clamp(s.relation[k],0,REL_MAX)}%</b></div>`).join('')}</div></details><label>Добавить долгосрочную цель<div class="hp-inline"><input id="hpIntentInput" class="hp-input" placeholder="Новая цель"><button id="hpIntentAdd">＋</button></div></label></div></details><button id="hpRecalibrate" class="hp-hero-recalibrate" title="Переоценить отношения">⟳</button></div></div><div class="hp-hero-rel-label">${esc(s.relationLabel||'')}</div><div class="hp-rel-grid hp-rel-active">${visibleFeelingKeys(s).map(k=>`<div class="hp-feeling-chip"><span>✿ ${esc(REL_LABEL[k]||k)}</span><b>${clamp(s.relation[k],0,REL_MAX)}%</b></div>`).join('')}</div>${s.feelingNote?`<div class="hp-hero-line"><b>💭 Эмоции</b><span>${esc(s.feelingNote)}</span></div>`:''}${s.lastShift?`<div class="hp-hero-line"><b>✨ Последний сдвиг</b><span>${esc(s.lastShift)}</span></div>`:''}<div class="hp-hero-line"><b>🎭 Настроение</b><span>${esc(s.inner?.mood||'—')}</span></div><div class="hp-hero-line"><b>🧠 Мотивы</b><span>${esc(s.inner?.motives||'—')}</span></div><div class="hp-hero-divider"></div><h4 class="hp-hero-section-title">🎯 Намерения</h4><div class="hp-hero-goals"><div class="hp-hero-line"><b>💬 Мнение</b><span>${esc(s.inner?.hiddenThought||'Пока нет записи')}</span></div><div class="hp-hero-line"><b>🎯 Цель сейчас</b><span>${esc(s.inner?.currentGoal||'Пока нет цели')}</span></div><div class="hp-hero-line"><b>🌙 Желание на будущее</b><span>${esc(s.inner?.futureDesire||'Пока нет записи')}</span></div><div class="hp-subtitle">📌 Долгие цели, которые нельзя забыть</div><div id="hpIntentList">${s.intentions.map(x=>`<div class="hp-intent" data-id="${esc(x.id)}"><span>${esc(x.text)}</span><button data-done="${esc(x.id)}" title="Отметить цель выполненной">✓ Готово</button><button data-del="${esc(x.id)}" title="Удалить цель без отметки о выполнении">🗑</button></div>`).join('')||'<p class="hp-muted">Пока пусто. Модель может добавить такую цель сама, либо ты добавишь вручную.</p>'}</div></div></div>`)}
       ${page('spark',`<div class="hp-hot-card"><h3>❤️‍🔥 Искра / кинки</h3><div class="hp-row"><label>Интенсивность <b id="hpIntensityVal">${s.kinkIntensity}</b><input id="hpIntensity" type="range" min="0" max="100" value="${s.kinkIntensity}"></label><label>Шанс авто-искра <b id="hpChanceVal">${s.kinkChance}%</b><input id="hpChance" type="range" min="0" max="100" value="${s.kinkChance}"></label></div>
       <div class="hp-subtitle">Постоянные предпочтения персонажа</div><div class="hp-chip-grid">${KINK_LIBRARY.map(([k,l])=>`<button class="hp-chip ${prefSet.has(k)?'on':''}" data-kink="${k}">${l}</button>`).join('')}${(s.customKinks||[]).map(k=>`<button class="hp-chip hp-custom-chip ${k.enabled!==false?'on':''}" data-custom-enabled-chip="${esc(k.id)}" title="${esc(k.description||'')}">✍️ ${esc(k.name)}</button>`).join('')}</div>
       <div class="hp-actions"><button id="hpScanCard">✨ Проверить карточку локально</button></div><p class="hp-muted">Без API и без отдельного запроса: HeartPulse читает текст карточки текущего персонажа и ищет известные признаки.</p>
@@ -1061,42 +1088,8 @@ function bind(){
   q('#hpNpcSettings')?.addEventListener('click',()=>{const e=q('#hpNpcEditor');if(e){e.open=!e.open;if(e.open)e.scrollIntoView({behavior:'smooth',block:'start'});}});
   // Image picker uses a real user click. Crop happens locally and exports a small JPEG.
 
-  function openNpcCrop(file,target){
-    if(!file||!file.type.startsWith('image/'))return toast('Выбери изображение','warning');
-    if(file.size>15*1024*1024)return toast('Файл больше 15 МБ','warning');
-    const url=URL.createObjectURL(file);
-    const shade=document.createElement('div');shade.className='hp-crop-overlay';
-    shade.innerHTML='<div class="hp-crop-dialog"><h3>📷 Аватар NPC</h3><p>Фото сначала показано целиком. Увеличь и передвинь его как тебе нравится — сохранится именно то, что видно в квадрате.</p><canvas class="hp-crop-window" width="300" height="300" aria-label="Обрезка аватара"></canvas><label>Масштаб <input class="hp-crop-zoom" type="range" min="1" max="4" step="0.02" value="1"></label><div class="hp-crop-actions"><button type="button" class="hp-crop-cancel">Отмена</button><button type="button" class="hp-crop-apply">✓ Сохранить</button></div></div>';
-    (document.querySelector('#hpPanel') || document.querySelector('#hpOverlay') || document.body).appendChild(shade);
-    const preview=shade.querySelector('canvas'),pctx=preview.getContext('2d'),zoom=shade.querySelector('.hp-crop-zoom');
-    const photo=new Image();let ox=0,oy=0,scale=1,down=null,ready=false;
-    const draw=(canvas,ctx)=>{
-      const side=canvas.width, fit=Math.min(side/photo.naturalWidth,side/photo.naturalHeight)*scale;
-      const w=photo.naturalWidth*fit,h=photo.naturalHeight*fit;
-      ctx.clearRect(0,0,side,side);ctx.fillStyle='#211a29';ctx.fillRect(0,0,side,side);
-      ctx.drawImage(photo,(side-w)/2+ox*side/300,(side-h)/2+oy*side/300,w,h);
-    };
-    const paint=()=>{if(ready)draw(preview,pctx);};
-    photo.onload=()=>{ready=true;paint();};photo.onerror=()=>{toast('Не удалось открыть изображение','error');close();};photo.src=url;
-    zoom.addEventListener('input',()=>{scale=Number(zoom.value);paint();});
-    preview.addEventListener('pointerdown',e=>{down={x:e.clientX,y:e.clientY,ox,oy};preview.setPointerCapture(e.pointerId);});
-    preview.addEventListener('pointermove',e=>{if(!down)return;const r=preview.getBoundingClientRect();ox=down.ox+(e.clientX-down.x)*300/r.width;oy=down.oy+(e.clientY-down.y)*300/r.height;paint();});
-    preview.addEventListener('pointerup',()=>down=null);preview.addEventListener('pointercancel',()=>down=null);
-    const close=()=>{shade.remove();URL.revokeObjectURL(url);};
-    shade.querySelector('.hp-crop-cancel').onclick=close;
-    shade.querySelector('.hp-crop-apply').onclick=async()=>{
-      try{
-        if(!ready)throw new Error('Image not ready');
-        const output=document.createElement('canvas');output.width=256;output.height=256;
-        draw(output,output.getContext('2d'));
-        const data=output.toDataURL('image/jpeg',0.82);
-        if(target){const state=getState(),npc=(state.npc||[]).find(n=>n.id===target);if(!npc){toast('NPC не найден','warning');close();return;}npc.avatar=data;const portraitStored=writeNpcPortrait(npc.id,data);await persistExactState(state);close();render();toast(portraitStored?'Аватар сохранён для этого чата':'Аватар сохранён в чате, но локальная копия недоступна','success');}
-        else{const input=q('#hpNpcAvatar');if(input)input.value=data;close();toast('Аватар подготовлен — нажми «Сохранить NPC»','success');}
-      }catch(err){console.error('[HeartPulse] crop failed',err);toast('Не удалось обработать фото','error');}
-    };
-  }
-  document.querySelectorAll('[data-npc-avatar-pick]').forEach(input=>input.addEventListener('change',e=>{const file=e.target.files?.[0];if(file)openNpcCrop(file,input.dataset.npcAvatarPick);input.value='';}));
-  q('#hpNpcAvatarFile')?.addEventListener('change',e=>{const file=e.target.files?.[0];if(file)openNpcCrop(file,null);e.target.value='';});
+  document.querySelectorAll('[data-npc-avatar-pick]').forEach(input=>input.addEventListener('change',e=>{const file=e.target.files?.[0];if(file)openSharedPortraitCrop(file,input.dataset.npcAvatarPick);input.value='';}));
+  q('#hpNpcAvatarFile')?.addEventListener('change',e=>{const file=e.target.files?.[0];if(file)openSharedPortraitCrop(file,null);e.target.value='';});
   q('#hpNpcSave')?.addEventListener('click',async()=>{
     const name=q('#hpNpcName')?.value?.trim(); if(!name) return toast('Напиши имя NPC','info');
     const s=getState(), editId=q('#hpNpcEditId')?.value||'', old=(s.npc||[]).find(n=>n.id===editId)||{};
