@@ -400,3 +400,14 @@
  overflow-y:auto!important; margin:auto!important; box-sizing:border-box!important;
 }
 #hpPanel > .hp-crop-overlay .hp-crop-window {width:min(250px,65vw,30dvh)!important;height:min(250px,65vw,30dvh)!important}
+
+/* NPC compact layout refinement v0.9.9.17 */
+#hpPanel .hp-npc-toolbar h3,#hpOverlay .hp-npc-toolbar h3{font-size:15px!important;line-height:1.3!important;font-weight:600!important}
+#hpPanel .hp-npc-identity b,#hpOverlay .hp-npc-identity b{font-family:"Marck Script","Segoe Print","Comic Sans MS",cursive!important;font-size:19px!important;font-weight:600!important;letter-spacing:.15px;line-height:1.25!important;color:#f8e9ff!important}
+#hpPanel .hp-npc-head,#hpOverlay .hp-npc-head{align-items:center!important}
+#hpPanel .hp-npc-actions,#hpOverlay .hp-npc-actions{position:relative;flex:none;margin-left:auto}
+#hpPanel .hp-npc-actions summary,#hpOverlay .hp-npc-actions summary{list-style:none;cursor:pointer;font-size:21px;color:#dcc5e9;line-height:1;border:1px solid rgba(230,180,255,.15);border-radius:9px;padding:2px 7px;background:rgba(255,255,255,.03)}
+#hpPanel .hp-npc-actions summary::-webkit-details-marker,#hpOverlay .hp-npc-actions summary::-webkit-details-marker{display:none}
+#hpPanel .hp-npc-action-menu,#hpOverlay .hp-npc-action-menu{position:absolute;right:0;top:calc(100% + 5px);z-index:15;min-width:128px;padding:5px;border:1px solid #765783;background:#302439;border-radius:10px;box-shadow:0 8px 22px #0008;display:flex;flex-direction:column;gap:4px}
+#hpPanel .hp-npc-action-menu button,#hpOverlay .hp-npc-action-menu button{font-size:12px!important;padding:7px 9px!important;white-space:nowrap;text-align:left}
+#hpPanel .hp-crop-window,#hpOverlay .hp-crop-window{display:block;object-fit:initial!important;touch-action:none;max-width:100%;box-sizing:border-box}
